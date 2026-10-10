@@ -134,7 +134,7 @@ def start(body: StartBody, request: Request):
                 select(Card).where(
                     Card.topic_id.in_(body.topic_ids),
                     Card.status == "saved",
-                    Card.mode == body.mode,
+                    Card.mode.in_(["quiz", "flashcard"] if body.mode == "flashcard" else ["quiz"]),
                 )
             )
         )
@@ -144,12 +144,16 @@ def start(body: StartBody, request: Request):
             raise HTTPException(
                 422, "Для одного занятия выберите меньше тем (максимум 300 карточек)"
             )
+        snapshots = [card_data(db, card, include_text=True) for card in cards]
+        if body.mode == "flashcard":
+            for snapshot in snapshots:
+                snapshot.update(mode="flashcard", options=[], correct_index=None)
         return new_session(
             db,
             user.id,
             list(dict.fromkeys(body.topic_ids)),
             body.mode,
-            [card_data(db, card, include_text=True) for card in cards],
+            snapshots,
         )
 
 

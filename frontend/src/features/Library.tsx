@@ -511,7 +511,10 @@ function TopicView({ topic, refresh }: { topic: Topic; refresh: () => void }) {
             <Button
               key={mode}
               variant={mode === "flashcard" ? "default" : "outline"}
-              disabled={busy || !saved.some((c) => c.mode === mode)}
+              disabled={
+                busy ||
+                !saved.some((c) => mode === "flashcard" || c.mode === "quiz")
+              }
               onClick={() => void start(mode)}
             >
               <Play data-icon="inline-start" />
@@ -614,8 +617,8 @@ function StudySelection({
         <DialogHeader>
           <DialogTitle>Что повторим?</DialogTitle>
           <DialogDescription>
-            Выбери одну или несколько тем. Занятие использует только сохранённые
-            карточки выбранного формата.
+            Выбери одну или несколько тем. Флеш-карты используют все сохранённые
+            вопросы, тест — только вопросы с вариантами ответа.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
@@ -658,7 +661,10 @@ function StudySelection({
                 variant={mode === value ? "secondary" : "outline"}
                 aria-pressed={mode === value}
                 disabled={busy}
-                onClick={() => setMode(value)}
+                onClick={() => {
+                  setMode(value)
+                  setError(null)
+                }}
               >
                 {value === "quiz" ? "Тест" : "Флеш-карты"}
               </Button>

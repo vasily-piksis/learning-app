@@ -72,10 +72,19 @@ def video_url(value):
 class TranscriptSession(Session):
     """Timeouts and bounded responses for the third-party transcript transport."""
 
+    def __init__(self):
+        super().__init__()
+        self.max_redirects = 3
+
     def request(self, method, url, **kwargs):
         kwargs["timeout"] = (10, 30)
         kwargs["stream"] = True
-        response = super().request(method, url, **kwargs)
+        # Requests runs response hooks before consuming redirect bodies. Apply the
+        # bound to every hop, including redirect responses, not just the final one.
+        kwargs["hooks"] = {"response": [self.read_response]}
+        return super().request(method, url, **kwargs)
+
+    def read_response(self, response, **kwargs):
         try:
             chunks, size = [], 0
             for chunk in response.iter_content(65536):

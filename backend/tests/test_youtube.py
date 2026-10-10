@@ -198,3 +198,65 @@ def test_cached_transcript_recovery_does_not_fetch_again(client, app, monkeypatc
     assert client.get(f"/api/topics/{topic}/documents").json()[0]["status"] == "ready"
     with app.state.db.session() as db:
         assert db.scalar(select(func.count(SourcePage.id))) == 2
+
+
+def test_redirect_response_cannot_bypass_transport_size_limit():
+    from io import BytesIO
+
+    from app.youtube import TranscriptSession
+    from requests import Response
+    from requests.adapters import BaseAdapter
+
+    class RedirectAdapter(BaseAdapter):
+        def send(self, request, **kwargs):
+            response = Response()
+            response.request, response.url = request, request.url
+            response.status_code = 302 if request.url.endswith("/start") else 200
+            response.headers["Location"] = "https://www.youtube.com/final"
+            response.raw = BytesIO(
+                b"x" * (9 * 1024 * 1024) if response.status_code == 302 else b"OK"
+            )
+            return response
+
+        def close(self):
+            pass
+
+    with TranscriptSession() as session:
+        session.mount("https://", RedirectAdapter())
+        with pytest.raises(ValueError, match="слишком большой"):
+            session.get("https://www.youtube.com/start")
+
+
+def test_transport_follows_small_redirects_with_bounded_hops():
+    from io import BytesIO
+
+    from app.youtube import TranscriptSession
+    from requests import Response, TooManyRedirects
+    from requests.adapters import BaseAdapter
+
+    class RedirectAdapter(BaseAdapter):
+        def __init__(self, loop):
+            self.loop, self.calls = loop, 0
+
+        def send(self, request, **kwargs):
+            self.calls += 1
+            response = Response()
+            response.request, response.url = request, request.url
+            response.status_code = 302 if self.loop or request.url.endswith("/start") else 200
+            response.headers["Location"] = "https://www.youtube.com/final"
+            response.raw = BytesIO(b"OK")
+            return response
+
+        def close(self):
+            pass
+
+    with TranscriptSession() as session:
+        adapter = RedirectAdapter(False)
+        session.mount("https://", adapter)
+        assert session.get("https://www.youtube.com/start").content == b"OK"
+        assert adapter.calls == 2
+        adapter = RedirectAdapter(True)
+        session.mount("https://", adapter)
+        with pytest.raises(TooManyRedirects):
+            session.get("https://www.youtube.com/start")
+        assert adapter.calls == 4

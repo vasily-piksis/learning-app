@@ -562,3 +562,75 @@ test("incorrect quiz answer is explicitly marked red and the correct choice rema
     "text-destructive"
   )
 })
+
+test("saved quiz cards also enable flashcard repetition in the topic", async () => {
+  window.location.hash = "#library/topic/1"
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/subjects": [{ id: 1, name: "Литовский", topic_count: 1 }],
+    "GET /api/topics": [
+      {
+        id: 1,
+        subject_id: 1,
+        name: "Asmens tapatybe",
+        version: 1,
+        card_count: 1,
+        document_count: 1,
+      },
+    ],
+    "GET /api/topics/1/documents": [],
+    "GET /api/cards?topic_id=1": [
+      {
+        id: 1,
+        topic_id: 1,
+        question: "Гражданин?",
+        answer: "Pilietis",
+        mode: "quiz",
+        status: "saved",
+        version: 1,
+        options: ["Pilietis", "Tauta"],
+        correct_index: 0,
+        sources: [],
+      },
+    ],
+    "POST /api/study": (init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        topic_ids: [1],
+        mode: "flashcard",
+      })
+      return { id: 13 }
+    },
+    "GET /api/study/13": {
+      id: 13,
+      topic_names: ["Asmens tapatybe"],
+      mode: "flashcard",
+      position: 0,
+      status: "active",
+      count: 1,
+      answered: 0,
+      card: {
+        id: 1,
+        question: "Гражданин?",
+        mode: "flashcard",
+        options: [],
+        revealed: false,
+        sources: [],
+      },
+    },
+    "GET /api/study/13/explanations?position=0": [],
+    "GET /api/study/13/explanation-jobs?position=0": [],
+  })
+  render(<App />)
+  const repeat = await screen.findByRole("button", {
+    name: "Повторить",
+    exact: true,
+  })
+  expect(repeat).toBeEnabled()
+  await userEvent.click(repeat)
+  expect(
+    await screen.findByRole("button", { name: "Показать ответ" })
+  ).toBeVisible()
+  expect(
+    screen.queryByRole("button", { name: /Tauta/ })
+  ).not.toBeInTheDocument()
+})
