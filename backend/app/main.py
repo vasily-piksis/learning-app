@@ -4,10 +4,13 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import secrets
+import threading
 from .config import Settings
 from .db import Database
 from .auth import router as auth_router, identity, LoginLimiter
 from .library import router as library_router
+from .jobs import router as jobs_router, recover_jobs, worker_loop
+from .ai import AI
 
 
 def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAPI:
@@ -16,12 +19,23 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
 
     @asynccontextmanager
     async def lifespan(app):
-        yield
+        recover_jobs(db)
+        stop = threading.Event()
+        thread = None
+        if worker:
+            thread = threading.Thread(target=worker_loop, args=(db, app.state.ai, stop), daemon=True)
+            thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            if thread:
+                thread.join(timeout=2)
 
     app = FastAPI(title="Учиться", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.settings = settings
     app.state.db = db
-    app.state.ai = ai
+    app.state.ai = ai or AI(settings)
     app.state.login_limiter = LoginLimiter()
 
     @app.middleware("http")
@@ -39,6 +53,7 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
 
     app.include_router(auth_router)
     app.include_router(library_router)
+    app.include_router(jobs_router)
 
     @app.get("/api/health")
     def health():
