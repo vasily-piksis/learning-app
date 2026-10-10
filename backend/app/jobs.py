@@ -63,15 +63,17 @@ def ingest(database, ai, payload):
             with pymupdf.open(path) as pdf:
                 local = pdf[number - 1].get_text()
         result = ai.extract(path, mime, number, local)
-        if result.page != number or not result.text.strip():
+        if result.page != number or (not result.text.strip() and not result.is_blank):
             raise ValueError("Страница не распознана. Проверьте качество изображения")
+        if result.is_blank and result.text.strip():
+            raise ValueError("Страница не может быть одновременно пустой и содержать текст")
         with database.session() as db:
             db.add(
                 SourcePage(
                     document_id=identifier,
                     number=number,
                     text=result.text,
-                    warnings=result.warnings,
+                    warnings=result.warnings or (["Пустая страница"] if result.is_blank else []),
                 )
             )
     with database.session() as db:
@@ -244,6 +246,8 @@ def start_generation(body: GenerateBody, request: Request):
                     .where(SourcePage.document_id == document.id)
                     .order_by(SourcePage.number)
                 ):
+                    if not page.text.strip():
+                        continue
                     sources.append(
                         {
                             "page_id": page.id,

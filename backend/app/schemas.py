@@ -32,6 +32,7 @@ class Extraction(Strict):
     page: int
     text: str
     warnings: list[str]
+    is_blank: bool = False
 
 
 class GeneratedCard(Strict):

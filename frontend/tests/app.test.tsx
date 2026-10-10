@@ -243,3 +243,168 @@ test("quiz waits for saved answer before allowing the next card", async () => {
   ).toBeEnabled()
   expect(await screen.findByText("Верно!")).toBeVisible()
 })
+
+test("starts study with only explicitly selected topics and chosen format", async () => {
+  window.location.hash = "#library"
+  let submitted: unknown
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/subjects": [{ id: 1, name: "История", topic_count: 3 }],
+    "GET /api/topics": [1, 2, 3].map((id) => ({
+      id,
+      subject_id: 1,
+      name: `Тема ${id}`,
+      version: 1,
+      card_count: 2,
+      document_count: 1,
+    })),
+    "POST /api/study": (init) => {
+      submitted = JSON.parse(String(init?.body))
+      return { id: 8 }
+    },
+    "GET /api/study/8": {
+      id: 8,
+      topic_names: ["Тема 1", "Тема 3"],
+      mode: "quiz",
+      status: "completed",
+      count: 4,
+      correct: 4,
+    },
+  })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Выбрать темы для повторения" })
+  )
+  const start = screen.getByRole("button", { name: "Начать занятие" })
+  expect(start).toBeDisabled()
+  await userEvent.click(screen.getByRole("checkbox", { name: /Тема 1/ }))
+  await userEvent.click(screen.getByRole("checkbox", { name: /Тема 3/ }))
+  await userEvent.click(screen.getByRole("button", { name: "Тест" }))
+  await userEvent.click(start)
+  await waitFor(() =>
+    expect(submitted).toEqual({ topic_ids: [1, 3], mode: "quiz" })
+  )
+  expect(await screen.findByText("Ещё один шаг вперёд")).toBeVisible()
+})
+
+test("skip link focuses content without leaving the current route", async () => {
+  window.location.hash = "#history"
+  server({ "GET /api/auth/me": user, "GET /api/study": [] })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("link", { name: "К содержимому" })
+  )
+  expect(window.location.hash).toBe("#history")
+  expect(document.getElementById("main")).toHaveFocus()
+})
+
+test("ambiguous flashcard save retries the original grade without offering a new grade", async () => {
+  window.location.hash = "#study/9"
+  const card = {
+    id: 1,
+    topic_id: 1,
+    question: "Что такое Нил?",
+    answer: "Река",
+    mode: "flashcard",
+    options: [],
+    version: 1,
+    status: "saved",
+    sources: [],
+    revealed: true,
+  }
+  const session = {
+    id: 9,
+    topic_ids: [1],
+    topic_names: ["Египет"],
+    mode: "flashcard",
+    position: 0,
+    status: "active",
+    count: 1,
+    answered: 0,
+    correct: 0,
+    card,
+  }
+  let first: unknown
+  let saves = 0
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/study/9": session,
+    "GET /api/study/9/explanations?position=0": [],
+    "GET /api/study/9/explanation-jobs?position=0": [],
+    "POST /api/study/9/answer": (init) => {
+      const body = JSON.parse(String(init?.body))
+      if (++saves === 1) {
+        first = body
+        throw new Error("Соединение потеряно")
+      }
+      expect(body).toEqual(first)
+      expect(body.remembered).toBe(false)
+      return {
+        session_id: 9,
+        position: 0,
+        correct: false,
+        card,
+        next_position: 1,
+      }
+    },
+  })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Повторить" })
+  )
+  expect(
+    await screen.findByText(
+      "Нет связи с сервером. Проверьте подключение и повторите."
+    )
+  ).toBeVisible()
+  expect(
+    screen.queryByRole("button", { name: "Помню" })
+  ).not.toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Повторить сохранение ответа" })
+  )
+  expect(
+    await screen.findByRole("button", { name: "Результат занятия" })
+  ).toBeEnabled()
+})
+
+test("changing subject cannot submit a previously selected hidden topic", async () => {
+  window.location.hash = "#library"
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/subjects": [
+      { id: 1, name: "История", topic_count: 1 },
+      { id: 2, name: "Биология", topic_count: 1 },
+    ],
+    "GET /api/topics": [
+      {
+        id: 1,
+        subject_id: 1,
+        name: "Египет",
+        card_count: 2,
+        document_count: 1,
+      },
+      {
+        id: 2,
+        subject_id: 2,
+        name: "Растения",
+        card_count: 2,
+        document_count: 1,
+      },
+    ],
+  })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Выбрать темы для повторения" })
+  )
+  await userEvent.click(screen.getByRole("checkbox", { name: "Египет" }))
+  await userEvent.keyboard("{Escape}")
+  await userEvent.click(screen.getByRole("link", { name: /Биология/ }))
+  await userEvent.click(
+    screen.getByRole("button", { name: "Выбрать темы для повторения" })
+  )
+  expect(
+    screen.queryByRole("checkbox", { name: "Египет" })
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Начать занятие" })).toBeDisabled()
+})

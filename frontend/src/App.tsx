@@ -96,7 +96,14 @@ export default function App() {
     )
   return (
     <div className="app-shell">
-      <a href="#main" className="skip-link">
+      <a
+        href="#main"
+        className="skip-link"
+        onClick={(event) => {
+          event.preventDefault()
+          document.getElementById("main")?.focus()
+        }}
+      >
         К содержимому
       </a>
       <header className="app-header">
@@ -147,7 +154,7 @@ export default function App() {
           </Button>
         </div>
       </header>
-      <main id="main" className="main-content">
+      <main id="main" tabIndex={-1} className="main-content">
         <ErrorNotice message={error} />
         {page === "generate" ? (
           <Generation

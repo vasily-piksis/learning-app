@@ -174,8 +174,8 @@ function Question({
                   variant={choice === i ? "secondary" : "outline"}
                   className={
                     feedback && shown.correct_index === i
-                      ? "quiz-option correct"
-                      : "quiz-option"
+                      ? "quiz-option correct h-auto justify-start text-left whitespace-normal"
+                      : "quiz-option h-auto justify-start text-left whitespace-normal"
                   }
                   disabled={busy || !!feedback || answerLocked}
                   aria-pressed={choice === i}
@@ -246,6 +246,10 @@ function Question({
             >
               {busy ? <PendingIcon /> : <Eye data-icon="inline-start" />}
               Показать ответ
+            </Button>
+          ) : answerLocked ? (
+            <Button disabled={busy} onClick={() => void answer()}>
+              {busy && <PendingIcon />}Повторить сохранение ответа
             </Button>
           ) : (
             <div className="grade-buttons">

@@ -107,3 +107,56 @@ def test_cached_pages_and_restart_recovery(client, app):
     with app.state.db.session() as db:
         assert db.get(Job, running_id).status == "failed"
         assert db.get(Job, queued_id).status == "queued"
+
+
+def test_blank_page_is_cached_and_excluded_from_generation(client, app):
+    from types import SimpleNamespace
+
+    from app.jobs import run_job
+
+    class BlankAI(FixtureAI):
+        def extract(self, path, mime, page_number, local_text):
+            if page_number == 2:
+                return SimpleNamespace(page=2, text="", warnings=["Пустая страница"], is_blank=True)
+            return super().extract(path, mime, page_number, local_text)
+
+    app.state.ai = BlankAI()
+    topic = make_topic(client)
+    import pymupdf
+
+    pdf = pymupdf.open()
+    for number in range(1, 4):
+        page = pdf.new_page()
+        if number != 2:
+            page.insert_text((50, 50), "Egypt is on the Nile.")
+    document = client.post(
+        f"/api/topics/{topic}/documents", files={"file": ("blank-page.pdf", pdf.tobytes())}
+    ).json()
+    run_job(app.state.db, app.state.ai, document["job_id"])
+    listed = client.get(f"/api/topics/{topic}/documents").json()[0]
+    assert listed["status"] == "ready"
+    assert listed["warnings"] == [{"page": 2, "messages": ["Пустая страница"]}]
+    with app.state.db.session() as db:
+        assert db.scalar(select(func.count(SourcePage.id))) == 3
+    job = client.post(
+        "/api/generate", json={"topic_ids": [topic], "mode": "flashcard", "count": 2}
+    ).json()
+    run_job(app.state.db, app.state.ai, job["id"])
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "succeeded"
+    assert [s["page"] for s in app.state.ai.inputs[0][1]] == [1, 3]
+    assert client.get(f"/api/documents/{document['id']}/download").status_code == 200
+
+
+def test_unreadable_empty_page_does_not_become_ready(client, app):
+    from types import SimpleNamespace
+
+    class UnreadableAI(FixtureAI):
+        def extract(self, *args):
+            return SimpleNamespace(page=1, text="", warnings=["Неразборчиво"], is_blank=False)
+
+    app.state.ai = UnreadableAI()
+    topic = make_topic(client)
+    ready_document(client, app, topic)
+    assert client.get(f"/api/topics/{topic}/documents").json()[0]["status"] == "failed"
+    with app.state.db.session() as db:
+        assert db.scalar(select(func.count(SourcePage.id))) == 0

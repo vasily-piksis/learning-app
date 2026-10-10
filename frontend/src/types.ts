@@ -24,6 +24,7 @@ export type Document = {
   status: string
   job_id: number
   error: string | null
+  warnings?: { page: number; messages: string[] }[]
 }
 export type Source = { document_id: number; page: number; name?: string }
 export type Card = {
