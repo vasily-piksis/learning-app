@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,4 +12,3 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-6-luna"
     frontend_dir: Path = Path("frontend/dist")
     max_upload_bytes: int = 20 * 1024 * 1024
-

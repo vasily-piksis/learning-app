@@ -1,4 +1,5 @@
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -78,7 +79,9 @@ class GenerateBody(BaseModel):
     def distinct_topics(self):
         if len(set(self.topic_ids)) != len(self.topic_ids) or self.count < len(self.topic_ids):
             raise ValueError("Выберите разные темы и хотя бы одну карточку на тему")
-        if self.document_ids is not None and (not self.document_ids or len(set(self.document_ids)) != len(self.document_ids)):
+        if self.document_ids is not None and (
+            not self.document_ids or len(set(self.document_ids)) != len(self.document_ids)
+        ):
             raise ValueError("Выберите непустой список разных документов")
         return self
 

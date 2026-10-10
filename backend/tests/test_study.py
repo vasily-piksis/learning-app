@@ -1,14 +1,17 @@
+from app.models import Card
 from conftest import make_topic
 from fakes import FixtureAI, ready_document
-from app.models import Card
 
 
 def saved_cards(client, app, mode="quiz", count=3):
     from app.jobs import run_job
+
     app.state.ai = FixtureAI()
     topic = make_topic(client)
     ready_document(client, app, topic)
-    job = client.post("/api/generate", json={"topic_ids": [topic], "mode": mode, "count": count}).json()
+    job = client.post(
+        "/api/generate", json={"topic_ids": [topic], "mode": mode, "count": count}
+    ).json()
     run_job(app.state.db, app.state.ai, job["id"])
     cards = client.get(f"/api/cards?job_id={job['id']}").json()
     client.post("/api/cards/save", json={"card_ids": [c["id"] for c in cards]})
@@ -28,7 +31,9 @@ def test_quiz_snapshot_idempotency_and_stale_tabs(client, app):
         card.question = "ИЗМЕНЕНО"
         card.correct_index = 2
         card.version += 1
-    assert client.get(f"/api/study/{session['id']}").json()["card"]["question"] == current["question"]
+    assert (
+        client.get(f"/api/study/{session['id']}").json()["card"]["question"] == current["question"]
+    )
     route = f"/api/study/{session['id']}/answer"
     payload = {"position": 0, "choice": 0, "idempotency_key": "one-answer"}
     result = client.post(route, json=payload)
@@ -45,19 +50,35 @@ def test_quiz_snapshot_idempotency_and_stale_tabs(client, app):
 def test_private_history_and_resume_after_reopen(client, app):
     from app.main import create_app
     from fastapi.testclient import TestClient
+
     topic, cards = saved_cards(client, app, "flashcard", 1)
     session = client.post("/api/study", json={"topic_ids": [topic], "mode": "flashcard"}).json()
-    assert client.post(f"/api/study/{session['id']}/answer", json={"position": 0, "remembered": False, "idempotency_key": "before-reveal"}).status_code == 409
+    assert (
+        client.post(
+            f"/api/study/{session['id']}/answer",
+            json={"position": 0, "remembered": False, "idempotency_key": "before-reveal"},
+        ).status_code
+        == 409
+    )
     client.post(f"/api/study/{session['id']}/reveal", json={"position": 0})
-    answer = client.post(f"/api/study/{session['id']}/answer", json={"position": 0, "remembered": False, "idempotency_key": "grade"})
+    answer = client.post(
+        f"/api/study/{session['id']}/answer",
+        json={"position": 0, "remembered": False, "idempotency_key": "grade"},
+    )
     assert answer.status_code == 200
     repeated = client.post(f"/api/study/{session['id']}/repeat").json()
     assert repeated["id"] != session["id"] and repeated["count"] == 1
     with TestClient(create_app(app.state.settings, worker=False)) as reopened:
         reopened.cookies.update(client.cookies)
         assert reopened.get(f"/api/study/{session['id']}").json()["status"] == "completed"
-        login = reopened.post("/api/auth/login", json={"username": "parent", "password": "parent-password"}, headers={"Origin": "http://testserver"})
-        reopened.headers.update({"Origin": "http://testserver", "X-CSRF-Token": login.json()["csrf_token"]})
+        login = reopened.post(
+            "/api/auth/login",
+            json={"username": "parent", "password": "parent-password"},
+            headers={"Origin": "http://testserver"},
+        )
+        reopened.headers.update(
+            {"Origin": "http://testserver", "X-CSRF-Token": login.json()["csrf_token"]}
+        )
         assert reopened.get("/api/study").json() == []
         assert reopened.get(f"/api/study/{session['id']}").status_code == 404
         assert reopened.post(f"/api/study/{session['id']}/repeat").status_code == 404
@@ -65,15 +86,26 @@ def test_private_history_and_resume_after_reopen(client, app):
 
 def test_explanations_use_snapshot_and_keep_followups(client, app):
     from app.jobs import run_job
+
     topic, _ = saved_cards(client, app, "quiz", 1)
     session = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
     route = f"/api/study/{session['id']}/explain"
     assert client.post(route, json={"position": 0, "question": "Объясни проще"}).status_code == 409
-    client.post(f"/api/study/{session['id']}/answer", json={"position": 0, "choice": 1, "idempotency_key": "wrong"})
+    client.post(
+        f"/api/study/{session['id']}/answer",
+        json={"position": 0, "choice": 1, "idempotency_key": "wrong"},
+    )
     first = client.post(route, json={"position": 0, "question": "Объясни проще"}).json()
     run_job(app.state.db, app.state.ai, first["id"])
     result = client.get(f"/api/jobs/{first['id']}").json()["result"]
-    second = client.post(route, json={"position": 0, "question": "Почему река важна?", "parent_id": result["explanation_id"]}).json()
+    second = client.post(
+        route,
+        json={
+            "position": 0,
+            "question": "Почему река важна?",
+            "parent_id": result["explanation_id"],
+        },
+    ).json()
     run_job(app.state.db, app.state.ai, second["id"])
     assert len(app.state.ai.inputs[-1][2]) == 1
     assert len(client.get(f"/api/study/{session['id']}/explanations?position=0").json()) == 2

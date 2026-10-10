@@ -1,20 +1,34 @@
+from app.models import Document, Job, SourcePage
 from conftest import make_topic, pdf_bytes
 from fakes import FixtureAI, ready_document
-from app.models import Job, Document, SourcePage, Card
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 
 def test_generate_scopes_topics_and_sources(client, app):
     from app.jobs import run_job
+
     app.state.ai = FixtureAI()
     first, second = make_topic(client), make_topic(client, "Рим")
     d1 = ready_document(client, app, first)
     d2 = ready_document(client, app, second)
-    invalid = client.post("/api/generate", json={"topic_ids": [first], "document_ids": [d2["id"]], "mode": "flashcard", "count": 3})
+    invalid = client.post(
+        "/api/generate",
+        json={"topic_ids": [first], "document_ids": [d2["id"]], "mode": "flashcard", "count": 3},
+    )
     assert invalid.status_code == 422
-    assert client.post("/api/generate", json={"topic_ids": [], "mode": "quiz", "count": 1}).status_code == 422
-    assert client.post("/api/generate", json={"topic_ids": [first, second], "mode": "quiz", "count": 1}).status_code == 422
-    result = client.post("/api/generate", json={"topic_ids": [first, second], "mode": "quiz", "count": 3})
+    assert (
+        client.post("/api/generate", json={"topic_ids": [], "mode": "quiz", "count": 1}).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/generate", json={"topic_ids": [first, second], "mode": "quiz", "count": 1}
+        ).status_code
+        == 422
+    )
+    result = client.post(
+        "/api/generate", json={"topic_ids": [first, second], "mode": "quiz", "count": 3}
+    )
     assert result.status_code == 200, result.text
     run_job(app.state.db, app.state.ai, result.json()["id"])
     job = client.get(f"/api/jobs/{result.json()['id']}").json()
@@ -24,17 +38,23 @@ def test_generate_scopes_topics_and_sources(client, app):
     assert {c["topic_id"] for c in cards} == {first, second}
     for topic, sources in app.state.ai.inputs:
         assert {s["document_id"] for s in sources} == {d1["id"] if topic == first else d2["id"]}
-    assert client.post("/api/cards/save", json={"card_ids": [c["id"] for c in cards]}).status_code == 200
+    assert (
+        client.post("/api/cards/save", json={"card_ids": [c["id"] for c in cards]}).status_code
+        == 200
+    )
     assert len(client.get(f"/api/cards?topic_id={first}&status=saved").json()) == 2
 
 
 def test_invalid_citations_fail_atomically(client, app):
     from app.jobs import run_job
+
     app.state.ai = FixtureAI()
     topic = make_topic(client)
     ready_document(client, app, topic)
     app.state.ai.invalid_source = True
-    job = client.post("/api/generate", json={"topic_ids": [topic], "mode": "flashcard", "count": 2}).json()
+    job = client.post(
+        "/api/generate", json={"topic_ids": [topic], "mode": "flashcard", "count": 2}
+    ).json()
     run_job(app.state.db, app.state.ai, job["id"])
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
     assert client.get(f"/api/cards?job_id={job['id']}").json() == []
@@ -60,10 +80,13 @@ def test_partial_sources_and_text_limit(client, app):
 
 
 def test_cached_pages_and_restart_recovery(client, app):
-    from app.jobs import run_job, recover_jobs
+    from app.jobs import recover_jobs, run_job
+
     app.state.ai = FixtureAI()
     topic = make_topic(client)
-    document = client.post(f"/api/topics/{topic}/documents", files={"file": ("lesson.pdf", pdf_bytes(2))}).json()
+    document = client.post(
+        f"/api/topics/{topic}/documents", files={"file": ("lesson.pdf", pdf_bytes(2))}
+    ).json()
     app.state.ai.fail_page = 2
     run_job(app.state.db, app.state.ai, document["job_id"])
     with app.state.db.session() as db:

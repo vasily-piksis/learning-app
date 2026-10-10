@@ -4,12 +4,14 @@ import time
 from collections import defaultdict, deque
 from datetime import timedelta
 from threading import Lock
+
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from .models import AuthSession, User, now
 from sqlalchemy import select
+
+from .models import AuthSession, User, now
 
 router = APIRouter(prefix="/api/auth")
 hasher = PasswordHasher()
@@ -40,7 +42,12 @@ def require_user(request: Request) -> User:
 
 
 def user_payload(user, auth):
-    return {"id": user.id, "username": user.username, "display_name": user.display_name, "csrf_token": auth.csrf}
+    return {
+        "id": user.id,
+        "username": user.username,
+        "display_name": user.display_name,
+        "csrf_token": auth.csrf,
+    }
 
 
 class Login(BaseModel):
@@ -84,9 +91,22 @@ def login(body: Login, request: Request, response: Response):
             if previous:
                 db.delete(previous)
         token = secrets.token_urlsafe(32)
-        auth = AuthSession(id=token_hash(token), user_id=user.id, csrf=secrets.token_urlsafe(32), expires=now() + timedelta(days=30))
+        auth = AuthSession(
+            id=token_hash(token),
+            user_id=user.id,
+            csrf=secrets.token_urlsafe(32),
+            expires=now() + timedelta(days=30),
+        )
         db.add(auth)
-        response.set_cookie("study_session", token, max_age=30 * 86400, httponly=True, secure=request.app.state.settings.cookie_secure, samesite="lax", path="/")
+        response.set_cookie(
+            "study_session",
+            token,
+            max_age=30 * 86400,
+            httponly=True,
+            secure=request.app.state.settings.cookie_secure,
+            samesite="lax",
+            path="/",
+        )
         return user_payload(user, auth)
 
 

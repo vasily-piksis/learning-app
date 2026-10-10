@@ -1,11 +1,13 @@
 import argparse
 import getpass
 import re
-from sqlalchemy import select, delete
+
+from sqlalchemy import delete, select
+
 from .auth import hasher
-from .models import User, AuthSession
 from .config import Settings
 from .db import Database
+from .models import AuthSession, User
 
 
 def create_user(db, username, display_name, password):
@@ -15,7 +17,11 @@ def create_user(db, username, display_name, password):
     with db.session() as session:
         if session.scalar(select(User).where(User.username == username)):
             raise ValueError("Такой логин уже существует")
-        user = User(username=username, display_name=display_name.strip() or username, password_hash=hasher.hash(password))
+        user = User(
+            username=username,
+            display_name=display_name.strip() or username,
+            password_hash=hasher.hash(password),
+        )
         session.add(user)
         session.flush()
         return user.id
@@ -38,7 +44,9 @@ def main():
             if len(password) < 10:
                 raise ValueError("Пароль должен содержать минимум 10 символов")
             with db.session() as session:
-                user = session.scalar(select(User).where(User.username == args.username.strip().lower()))
+                user = session.scalar(
+                    select(User).where(User.username == args.username.strip().lower())
+                )
                 if not user:
                     raise ValueError("Пользователь не найден")
                 user.password_hash = hasher.hash(password)

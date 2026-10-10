@@ -3,14 +3,16 @@ import uuid
 import warnings
 from io import BytesIO
 from pathlib import Path
+
 import pymupdf
-from PIL import Image, UnidentifiedImageError
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select, func
+from PIL import Image, UnidentifiedImageError
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+
 from .auth import require_user
-from .models import Subject, Topic, Document, Job, Card
+from .models import Card, Document, Job, Subject, Topic
 from .schemas import NameBody, TopicBody
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
@@ -25,19 +27,34 @@ def get_or_404(db, model, identifier):
 
 
 def subject_data(db, value):
-    return {"id": value.id, "name": value.name, "topic_count": db.scalar(select(func.count(Topic.id)).where(Topic.subject_id == value.id))}
+    return {
+        "id": value.id,
+        "name": value.name,
+        "topic_count": db.scalar(select(func.count(Topic.id)).where(Topic.subject_id == value.id)),
+    }
 
 
 def topic_data(db, value):
-    return {"id": value.id, "subject_id": value.subject_id, "name": value.name, "version": value.version,
-            "card_count": db.scalar(select(func.count(Card.id)).where(Card.topic_id == value.id, Card.status == "saved")),
-            "document_count": db.scalar(select(func.count(Document.id)).where(Document.topic_id == value.id))}
+    return {
+        "id": value.id,
+        "subject_id": value.subject_id,
+        "name": value.name,
+        "version": value.version,
+        "card_count": db.scalar(
+            select(func.count(Card.id)).where(Card.topic_id == value.id, Card.status == "saved")
+        ),
+        "document_count": db.scalar(
+            select(func.count(Document.id)).where(Document.topic_id == value.id)
+        ),
+    }
 
 
 @router.get("/subjects")
 def subjects(request: Request):
     with request.app.state.db.session() as db:
-        return [subject_data(db, value) for value in db.scalars(select(Subject).order_by(Subject.id))]
+        return [
+            subject_data(db, value) for value in db.scalars(select(Subject).order_by(Subject.id))
+        ]
 
 
 @router.post("/subjects")
@@ -111,22 +128,52 @@ def inspect_upload(data: bytes):
             with Image.open(BytesIO(data)) as image:
                 image.load()
             return mime, 1
-    except (ValueError, UnidentifiedImageError, OSError, RuntimeError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
-        raise HTTPException(422, str(error) if isinstance(error, ValueError) else "Файл повреждён или имеет неподдерживаемый формат") from None
+    except (
+        ValueError,
+        UnidentifiedImageError,
+        OSError,
+        RuntimeError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as error:
+        raise HTTPException(
+            422,
+            str(error)
+            if isinstance(error, ValueError)
+            else "Файл повреждён или имеет неподдерживаемый формат",
+        ) from None
 
 
 def document_data(db, value):
-    job = db.scalar(select(Job).where(Job.kind == "ingest").order_by(Job.id.desc()).filter(Job.payload["document_id"].as_integer() == value.id))
-    return {"id": value.id, "topic_id": value.topic_id, "name": value.name, "mime": value.mime, "size": value.size,
-            "page_count": value.page_count, "status": value.status, "job_id": job.id if job else None,
-            "error": job.error if job else None}
+    job = db.scalar(
+        select(Job)
+        .where(Job.kind == "ingest")
+        .order_by(Job.id.desc())
+        .filter(Job.payload["document_id"].as_integer() == value.id)
+    )
+    return {
+        "id": value.id,
+        "topic_id": value.topic_id,
+        "name": value.name,
+        "mime": value.mime,
+        "size": value.size,
+        "page_count": value.page_count,
+        "status": value.status,
+        "job_id": job.id if job else None,
+        "error": job.error if job else None,
+    }
 
 
 @router.get("/topics/{identifier}/documents")
 def documents(identifier: int, request: Request):
     with request.app.state.db.session() as db:
         get_or_404(db, Topic, identifier)
-        return [document_data(db, value) for value in db.scalars(select(Document).where(Document.topic_id == identifier).order_by(Document.id))]
+        return [
+            document_data(db, value)
+            for value in db.scalars(
+                select(Document).where(Document.topic_id == identifier).order_by(Document.id)
+            )
+        ]
 
 
 @router.post("/topics/{identifier}/documents")
@@ -145,7 +192,9 @@ async def upload(identifier: int, request: Request, file: UploadFile):
     digest = hashlib.sha256(data).hexdigest()
     database = request.app.state.db
     with database.session() as db:
-        duplicate = db.scalar(select(Document).where(Document.topic_id == identifier, Document.sha256 == digest))
+        duplicate = db.scalar(
+            select(Document).where(Document.topic_id == identifier, Document.sha256 == digest)
+        )
         if duplicate:
             return document_data(db, duplicate)
     filename = uuid.uuid4().hex
@@ -153,8 +202,15 @@ async def upload(identifier: int, request: Request, file: UploadFile):
     path.write_bytes(data)
     try:
         with database.session() as db:
-            value = Document(topic_id=identifier, name=Path((file.filename or "Материал").replace("\\", "/")).name[:240], filename=filename,
-                             mime=mime, size=size, sha256=digest, page_count=page_count)
+            value = Document(
+                topic_id=identifier,
+                name=Path((file.filename or "Материал").replace("\\", "/")).name[:240],
+                filename=filename,
+                mime=mime,
+                size=size,
+                sha256=digest,
+                page_count=page_count,
+            )
             db.add(value)
             db.flush()
             topic = db.get(Topic, identifier)
@@ -165,7 +221,9 @@ async def upload(identifier: int, request: Request, file: UploadFile):
     except IntegrityError:
         path.unlink(missing_ok=True)
         with database.session() as db:
-            duplicate = db.scalar(select(Document).where(Document.topic_id == identifier, Document.sha256 == digest))
+            duplicate = db.scalar(
+                select(Document).where(Document.topic_id == identifier, Document.sha256 == digest)
+            )
             if not duplicate:
                 raise
             return document_data(db, duplicate)

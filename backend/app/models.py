@@ -1,10 +1,11 @@
-from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from datetime import UTC, datetime
+
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
@@ -127,7 +128,10 @@ class SessionCard(Base):
 
 class Attempt(Base):
     __tablename__ = "attempts"
-    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"), UniqueConstraint("session_card_id"))
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        UniqueConstraint("session_card_id"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     session_card_id: Mapped[int] = mapped_column(ForeignKey("session_cards.id"))
