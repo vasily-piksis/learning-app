@@ -7,6 +7,7 @@ import secrets
 from .config import Settings
 from .db import Database
 from .auth import router as auth_router, identity, LoginLimiter
+from .library import router as library_router
 
 
 def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAPI:
@@ -37,6 +38,7 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
         return await call_next(request)
 
     app.include_router(auth_router)
+    app.include_router(library_router)
 
     @app.get("/api/health")
     def health():
