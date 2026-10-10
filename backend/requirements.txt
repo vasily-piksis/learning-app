@@ -1,0 +1,10 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+sqlalchemy>=2.0,<3
+alembic>=1.15,<2
+openai>=2,<3
+argon2-cffi>=23,<26
+pydantic-settings>=2.8,<3
+python-multipart>=0.0.20,<1
+pymupdf>=1.25,<2
+pillow>=11,<13
