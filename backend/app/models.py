@@ -1,6 +1,16 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -57,6 +67,8 @@ class Document(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     page_count: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="queued")
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created: Mapped[datetime] = mapped_column(default=now)
 
 
@@ -68,6 +80,8 @@ class SourcePage(Base):
     number: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     warnings: Mapped[list] = mapped_column(JSON, default=list)
+    start_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    end_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class Job(Base):

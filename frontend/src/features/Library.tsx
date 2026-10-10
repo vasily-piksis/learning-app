@@ -10,6 +10,7 @@ import {
   Play,
   Pencil,
   FolderOpen,
+  Video,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -394,6 +395,13 @@ function TopicView({ topic, refresh }: { topic: Topic; refresh: () => void }) {
           <ErrorNotice message={error} />
         </CardContent>
       </Card>
+      <YouTubeImport
+        topicId={topic.id}
+        onAdded={() => {
+          documents.refetch()
+          refresh()
+        }}
+      />
       <div className="section-toolbar">
         <h2>
           Материалы{" "}
@@ -409,26 +417,40 @@ function TopicView({ topic, refresh }: { topic: Topic; refresh: () => void }) {
           {documents.data.map((document) => (
             <div key={document.id} className="document-row">
               <div className="document-icon">
-                <FileText />
+                {document.source_url ? <Video /> : <FileText />}
               </div>
               <div className="document-details">
                 <a
-                  href={`/api/documents/${document.id}/download`}
+                  href={
+                    document.source_url ||
+                    `/api/documents/${document.id}/download`
+                  }
                   target="_blank"
                   rel="noreferrer"
                 >
                   {document.name}
                 </a>
                 <p>
-                  {document.page_count} стр. ·{" "}
-                  {(document.size / 1024 / 1024).toFixed(1)} МБ
+                  {document.source_url
+                    ? `Субтитры: ${document.language} · ${document.page_count} фрагментов`
+                    : `${document.page_count} стр.`}{" "}
+                  · {(document.size / 1024 / 1024).toFixed(1)} МБ
                 </p>
+                {document.source_url && document.status === "ready" && (
+                  <a
+                    className="text-sm"
+                    href={`/api/documents/${document.id}/download`}
+                  >
+                    Скачать сохранённые субтитры
+                  </a>
+                )}
                 {document.error && (
                   <p className="text-destructive">{document.error}</p>
                 )}
                 {document.warnings?.map((warning) => (
                   <p key={warning.page} className="text-muted-foreground">
-                    Стр. {warning.page}: {warning.messages.join("; ")}
+                    {document.source_url ? "Фрагмент" : "Стр."} {warning.page}:{" "}
+                    {warning.messages.join("; ")}
                   </p>
                 ))}
               </div>
@@ -447,7 +469,9 @@ function TopicView({ topic, refresh }: { topic: Topic; refresh: () => void }) {
                       {
                         ready: "Готово",
                         queued: "В очереди",
-                        processing: "Распознаём",
+                        processing: document.source_url
+                          ? "Получаем субтитры"
+                          : "Распознаём",
                         failed: "Ошибка",
                       } as Record<string, string>
                     )[document.status]
@@ -666,5 +690,96 @@ function StudySelection({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function YouTubeImport({
+  topicId,
+  onAdded,
+}: {
+  topicId: number
+  onAdded: () => void
+}) {
+  const [url, setUrl] = useState("")
+  const [language, setLanguage] = useState("ru")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Video className="size-5" />
+          Урок из YouTube
+        </CardTitle>
+        <CardDescription>
+          Сохраним субтитры видео в эту тему. Карточки будут ссылаться на нужный
+          момент урока.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={async (event) => {
+            event.preventDefault()
+            if (busy || !url.trim() || !language.trim()) return
+            setBusy(true)
+            setError(null)
+            try {
+              await api(`/topics/${topicId}/youtube`, "POST", {
+                url: url.trim(),
+                language: language.trim(),
+              })
+              setUrl("")
+              toast.success("Видео добавлено. Получаем субтитры")
+              onAdded()
+            } catch (e) {
+              setError(errorText(e))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <Field>
+            <FieldLabel htmlFor="youtube-url">Ссылка YouTube</FieldLabel>
+            <Input
+              id="youtube-url"
+              type="url"
+              value={url}
+              disabled={busy}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://www.youtube.com/watch?v=…"
+              maxLength={2048}
+              required
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="youtube-language">Язык субтитров</FieldLabel>
+            <Input
+              id="youtube-language"
+              className="max-w-40"
+              value={language}
+              disabled={busy}
+              onChange={(event) => setLanguage(event.target.value)}
+              maxLength={20}
+              required
+              pattern="[a-z]{2,3}(-[A-Za-z0-9]{2,8})?"
+            />
+            <FieldDescription>
+              ru — русский, en — английский, lt — литовский. Получим субтитры
+              только на выбранном языке. Автоматические субтитры могут содержать
+              ошибки; YouTube иногда ограничивает получение с сервера.
+            </FieldDescription>
+          </Field>
+          <ErrorNotice message={error} />
+          <Button
+            className="self-start"
+            disabled={busy || !url.trim() || !language.trim()}
+          >
+            {busy ? <PendingIcon /> : <Plus data-icon="inline-start" />}Добавить
+            YouTube
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   )
 }

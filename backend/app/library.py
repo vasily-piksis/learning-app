@@ -147,7 +147,7 @@ def inspect_upload(data: bytes):
 def document_data(db, value):
     job = db.scalar(
         select(Job)
-        .where(Job.kind == "ingest")
+        .where(Job.kind.in_(["ingest", "youtube"]))
         .order_by(Job.id.desc())
         .filter(Job.payload["document_id"].as_integer() == value.id)
     )
@@ -161,6 +161,9 @@ def document_data(db, value):
         "status": value.status,
         "job_id": job.id if job else None,
         "error": job.error if job else None,
+        "source_url": value.source_url,
+        "language": value.source_meta.get("language"),
+        "is_generated": value.source_meta.get("is_generated"),
         "warnings": [
             {"page": page.number, "messages": page.warnings}
             for page in db.scalars(
@@ -248,4 +251,8 @@ def download(identifier: int, request: Request):
         path = request.app.state.settings.data_dir / "files" / value.filename
         if not path.is_file():
             raise HTTPException(404, "Файл не найден в хранилище")
-        return FileResponse(path, media_type=value.mime, filename=value.name)
+        return FileResponse(
+            path,
+            media_type=value.mime,
+            filename=f"{value.name}.json" if value.source_url else value.name,
+        )

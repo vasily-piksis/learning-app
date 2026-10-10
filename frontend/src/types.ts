@@ -25,8 +25,18 @@ export type Document = {
   job_id: number
   error: string | null
   warnings?: { page: number; messages: string[] }[]
+  source_url?: string | null
+  language?: string | null
+  is_generated?: boolean | null
 }
-export type Source = { document_id: number; page: number; name?: string }
+export type Source = {
+  document_id: number
+  page: number
+  name?: string
+  url?: string
+  start_seconds?: number
+  end_seconds?: number
+}
 export type Card = {
   id: number
   topic_id: number

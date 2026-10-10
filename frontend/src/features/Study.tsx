@@ -8,6 +8,7 @@ import {
   Sparkles,
   Send,
   Trophy,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -168,37 +169,59 @@ function Question({
         <CardContent className="flex flex-col gap-5">
           {session.mode === "quiz" && (
             <div className="quiz-options">
-              {shown.options.map((option, i) => (
-                <Button
-                  key={i}
-                  variant={choice === i ? "secondary" : "outline"}
-                  className={
-                    feedback && shown.correct_index === i
-                      ? "quiz-option correct h-auto justify-start text-left whitespace-normal"
-                      : "quiz-option h-auto justify-start text-left whitespace-normal"
-                  }
-                  disabled={busy || !!feedback || answerLocked}
-                  aria-pressed={choice === i}
-                  onClick={() => setChoice(i)}
-                >
-                  <span className="option-letter">
-                    {String.fromCharCode(65 + i)}
-                  </span>
-                  <span>{option}</span>
-                  {feedback && shown.correct_index === i && (
-                    <Check data-icon="inline-end" />
-                  )}
-                </Button>
-              ))}
+              {shown.options.map((option, i) => {
+                const correct = !!feedback && shown.correct_index === i
+                const incorrect =
+                  !!feedback && !feedback.correct && choice === i
+                return (
+                  <Button
+                    key={i}
+                    variant={choice === i ? "secondary" : "outline"}
+                    className={[
+                      "quiz-option h-auto justify-start text-left whitespace-normal",
+                      feedback && "disabled:opacity-100",
+                      correct &&
+                        "correct border-emerald-600 bg-emerald-50 text-emerald-900",
+                      incorrect &&
+                        "incorrect border-destructive bg-destructive/10 text-destructive",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    disabled={busy || !!feedback || answerLocked}
+                    aria-pressed={choice === i}
+                    onClick={() => setChoice(i)}
+                  >
+                    <span className="option-letter">
+                      {String.fromCharCode(65 + i)}
+                    </span>
+                    <span>{option}</span>
+                    {correct && (
+                      <>
+                        <Check data-icon="inline-end" />
+                        <span className="sr-only">Правильный ответ</span>
+                      </>
+                    )}
+                    {incorrect && (
+                      <>
+                        <X data-icon="inline-end" />
+                        <span className="sr-only">Неверный ответ</span>
+                      </>
+                    )}
+                  </Button>
+                )
+              })}
             </div>
           )}
           {revealed && (
             <div className="answer-content">
-              <p className="eyebrow">
+              <p
+                className={`eyebrow ${feedback ? (feedback.correct ? "text-emerald-800" : "text-destructive") : ""}`}
+                role={feedback ? "status" : undefined}
+              >
                 {feedback
                   ? feedback.correct
                     ? "Верно!"
-                    : "Давай запомним"
+                    : "Неверно. Правильный ответ:"
                   : "Ответ"}
               </p>
               <p className="answer-text">{shown.answer}</p>

@@ -120,15 +120,23 @@ export function Sources({ sources }: { sources: Source[] }) {
       {sources.map((s, i) => (
         <a
           key={i}
-          href={`/api/documents/${s.document_id}/download`}
+          href={s.url || `/api/documents/${s.document_id}/download`}
           target="_blank"
           rel="noreferrer"
         >
-          {s.name || `Документ ${s.document_id}`} · стр. {s.page}
+          {s.name || `Документ ${s.document_id}`} ·{" "}
+          {s.start_seconds !== undefined
+            ? timeLabel(s.start_seconds)
+            : `стр. ${s.page}`}
         </a>
       ))}
     </div>
   )
+}
+function timeLabel(seconds: number) {
+  const value = Math.floor(seconds),
+    hours = Math.floor(value / 3600)
+  return `${hours ? `${String(hours).padStart(2, "0")}:` : ""}${String(Math.floor(value / 60) % 60).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`
 }
 export function NameDialog({
   title,

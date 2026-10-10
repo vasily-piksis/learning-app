@@ -8,3 +8,4 @@ pydantic-settings>=2.8,<3
 python-multipart>=0.0.20,<1
 pymupdf>=1.25,<2
 pillow>=11,<13
+youtube-transcript-api>=1.2.4,<2

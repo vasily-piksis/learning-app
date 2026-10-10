@@ -15,6 +15,7 @@ from .jobs import recover_jobs, worker_loop
 from .jobs import router as jobs_router
 from .library import router as library_router
 from .study import router as study_router
+from .youtube import router as youtube_router
 
 
 def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAPI:
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
     app.include_router(library_router)
     app.include_router(jobs_router)
     app.include_router(study_router)
+    app.include_router(youtube_router)
 
     @app.get("/api/health")
     def health():

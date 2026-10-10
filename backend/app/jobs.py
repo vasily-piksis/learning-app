@@ -10,6 +10,8 @@ from .auth import require_user
 from .library import get_or_404
 from .models import Card, CardSource, Document, Explanation, Job, SourcePage, Topic, now
 from .schemas import CardEdit, GenerateBody, GeneratedCard, SaveCards
+from .sources import source_data
+from .youtube import ingest_youtube
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
@@ -32,7 +34,7 @@ def recover_jobs(database):
         for job in db.scalars(select(Job).where(Job.status == "running")):
             job.status = "failed"
             job.error = "Задача прервана перезапуском. Можно повторить вручную"
-            if job.kind == "ingest":
+            if job.kind in {"ingest", "youtube"}:
                 document = db.get(Document, job.payload["document_id"])
                 if document:
                     document.status = "failed"
@@ -113,6 +115,8 @@ def run_job(database, ai, identifier):
     try:
         if kind == "ingest":
             result = ingest(database, ai, payload)
+        elif kind == "youtube":
+            result = ingest_youtube(database, payload)
         elif kind == "generate":
             cards, reasons = generate(database, ai, payload)
             result = {"card_ids": [], "warnings": reasons}
@@ -121,6 +125,15 @@ def run_job(database, ai, identifier):
             check_refs(explanation.sources, payload["snapshot"]["sources"])
             if not explanation.text.strip():
                 raise ValueError("Модель вернула пустое объяснение")
+            explanation_data = explanation.model_dump()
+            source_map = {
+                (source["document_id"], source["page"]): source
+                for source in payload["snapshot"]["sources"]
+            }
+            explanation_data["sources"] = [
+                {k: v for k, v in source_map[(ref.document_id, ref.page)].items() if k != "text"}
+                for ref in explanation.sources
+            ]
             result = {}
         else:
             raise ValueError("Неизвестный тип задачи")
@@ -149,11 +162,11 @@ def run_job(database, ai, identifier):
                     session_card_id=payload["session_card_id"],
                     parent_id=payload["parent_id"],
                     question=payload["question"],
-                    result=explanation.model_dump(),
+                    result=explanation_data,
                 )
                 db.add(value)
                 db.flush()
-                result = {"explanation_id": value.id, **explanation.model_dump()}
+                result = {"explanation_id": value.id, **explanation_data}
             job.status = "succeeded"
             job.result = result
     except Exception as error:
@@ -164,7 +177,7 @@ def run_job(database, ai, identifier):
         with database.session() as db:
             job = db.get(Job, identifier)
             job.status, job.error = "failed", message
-            if kind == "ingest":
+            if kind in {"ingest", "youtube"}:
                 db.get(Document, payload["document_id"]).status = "failed"
 
 
@@ -213,7 +226,7 @@ def retry(identifier: int, request: Request):
         if value.status != "failed":
             raise HTTPException(409, "Повторить можно только неудачную задачу")
         value.status, value.error = "queued", None
-        if value.kind == "ingest":
+        if value.kind in {"ingest", "youtube"}:
             db.get(Document, value.payload["document_id"]).status = "queued"
         return job_data(value)
 
@@ -248,15 +261,7 @@ def start_generation(body: GenerateBody, request: Request):
                 ):
                     if not page.text.strip():
                         continue
-                    sources.append(
-                        {
-                            "page_id": page.id,
-                            "document_id": document.id,
-                            "name": document.name,
-                            "page": page.number,
-                            "text": page.text,
-                        }
-                    )
+                    sources.append(source_data(document, page, include_text=True))
                     length += len(page.text)
             if not sources:
                 raise HTTPException(422, "В каждой выбранной теме нужны готовые материалы")
@@ -281,15 +286,7 @@ def card_data(db, card, include_text=False):
     for ref in refs:
         page = db.get(SourcePage, ref.page_id)
         document = db.get(Document, page.document_id)
-        value = {
-            "page_id": page.id,
-            "document_id": document.id,
-            "name": document.name,
-            "page": page.number,
-        }
-        if include_text:
-            value["text"] = page.text
-        sources.append(value)
+        sources.append(source_data(document, page, include_text))
     return {
         "id": card.id,
         "job_id": card.job_id,
