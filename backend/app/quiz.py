@@ -30,7 +30,12 @@ def preparation_job(db, user_id, topic_ids, snapshots):
             and [(card["id"], card["version"]) for card in job.payload["cards"]] == signature
         ):
             return job
-    if sum(len(s.get("text", "")) for card in snapshots for s in card["sources"]) > 100000:
+    sources = {
+        (source["document_id"], source["page"]): source
+        for card in snapshots
+        for source in card["sources"]
+    }
+    if sum(len(source.get("text", "")) for source in sources.values()) > 100000:
         raise HTTPException(422, "Материалы превышают 100 000 символов. Выберите меньше документов")
     job = Job(
         user_id=user_id, kind="prepare_quiz", payload={"topic_ids": topic_ids, "cards": snapshots}
@@ -53,13 +58,18 @@ def prepare_options(ai, payload):
     return results
 
 
-def save_options(db, payload, results):
+def validate_preparation(db, payload):
     cards = [db.get(Card, snapshot["id"]) for snapshot in payload["cards"]]
     if any(
         card is None or card.version != snapshot["version"] or card.status != "saved"
         for card, snapshot in zip(cards, payload["cards"], strict=True)
     ):
         raise ValueError("Вопрос изменён во время подготовки теста. Запустите тест заново")
+    return cards
+
+
+def save_options(db, payload, results):
+    cards = validate_preparation(db, payload)
     for card, result in zip(cards, results, strict=True):
         card.mode, card.options, card.correct_index = "quiz", result.options, result.correct_index
         card.version += 1

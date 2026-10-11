@@ -491,6 +491,10 @@ export const translations: Record<string, { pl: string; en: string }> = {
     pl: "Powtórz",
     en: "Review again",
   },
+  "Запустить тест заново": {
+    pl: "Uruchom test ponownie",
+    en: "Restart test",
+  },
   "Повторить задачу": {
     pl: "Ponów zadanie",
     en: "Retry task",

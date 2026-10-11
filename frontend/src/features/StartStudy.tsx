@@ -79,6 +79,29 @@ export function Preparation({ id }: { id: number }) {
   const job = useQuery<Job>(`/jobs/${id}`, 1000)
   const started = useRef(false)
   const [error, setError] = useState<string | null>(null)
+  const [restarting, setRestarting] = useState(false)
+  const obsolete =
+    job.data?.error ===
+    "Вопрос изменён во время подготовки теста. Запустите тест заново"
+  async function restart() {
+    setRestarting(true)
+    setError(null)
+    try {
+      const result = await api<StartResult>("/study", "POST", {
+        topic_ids: job.data?.topic_ids,
+        mode: "quiz",
+      })
+      navigate(
+        "preparation_job" in result
+          ? `prepare/${result.preparation_job.id}`
+          : `study/${result.id}`
+      )
+    } catch (error) {
+      setError(errorText(error))
+    } finally {
+      setRestarting(false)
+    }
+  }
   useEffect(() => {
     if (
       job.data?.status !== "succeeded" ||
@@ -126,13 +149,22 @@ export function Preparation({ id }: { id: number }) {
         job.data && (
           <JobNotice
             job={job.data}
-            retry={() =>
-              void api(`/jobs/${id}/retry`, "POST")
-                .then(job.refetch)
-                .catch((error) => setError(errorText(error)))
+            retry={
+              obsolete
+                ? undefined
+                : () =>
+                    void api(`/jobs/${id}/retry`, "POST")
+                      .then(job.refetch)
+                      .catch((error) => setError(errorText(error)))
             }
           />
         )
+      )}
+      {job.data?.status === "failed" && obsolete && (
+        <Button disabled={restarting} onClick={() => void restart()}>
+          {restarting && <PendingIcon />}
+          {t("Запустить тест заново")}
+        </Button>
       )}
     </div>
   )

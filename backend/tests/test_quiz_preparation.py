@@ -1,5 +1,5 @@
 from app.jobs import recover_jobs, run_job
-from app.models import Card, Job
+from app.models import Card, Job, SourcePage
 from sqlalchemy import func, select
 from test_study import saved_cards
 
@@ -89,3 +89,79 @@ def test_mixed_bank_prepares_only_missing_options_and_rejects_changed_answer(cli
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
     with app.state.db.session() as db:
         assert db.get(Card, cards[1]["id"]).options == []
+
+
+def test_many_legacy_questions_share_one_source_without_exceeding_limit(client, app):
+    topic, _ = saved_cards(client, app, "flashcard", 21)
+    with app.state.db.session() as db:
+        db.scalar(select(SourcePage)).text = "x" * 5600
+    response = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"})
+    assert response.status_code == 202, response.text
+    run_job(app.state.db, app.state.ai, response.json()["preparation_job"]["id"])
+    assert (
+        client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()["count"] == 21
+    )
+
+
+def test_preparation_stale_before_run_and_retry_make_no_paid_calls(client, app):
+    topic, cards = saved_cards(client, app, "flashcard", 2)
+    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
+        "preparation_job"
+    ]
+    calls = []
+    original = app.state.ai.prepare_quiz
+
+    def track(snapshot):
+        calls.append(snapshot["id"])
+        return original(snapshot)
+
+    app.state.ai.prepare_quiz = track
+    with app.state.db.session() as db:
+        db.get(Card, cards[0]["id"]).version += 1
+    run_job(app.state.db, app.state.ai, job["id"])
+    assert calls == []
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
+    response = client.post(f"/api/jobs/{job['id']}/retry")
+    assert response.status_code == 409
+    assert "Запустите тест заново" in response.json()["detail"]
+    run_job(app.state.db, app.state.ai, job["id"])
+    assert calls == []
+    fresh = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
+        "preparation_job"
+    ]
+    assert fresh["id"] != job["id"]
+    run_job(app.state.db, app.state.ai, fresh["id"])
+    assert len(calls) == 2
+    assert client.get(f"/api/jobs/{fresh['id']}").json()["status"] == "succeeded"
+
+
+def test_edit_during_model_call_still_rejects_all_option_writes(client, app):
+    topic, cards = saved_cards(client, app, "flashcard", 2)
+    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
+        "preparation_job"
+    ]
+    original = app.state.ai.prepare_quiz
+
+    def concurrent_edit(snapshot):
+        with app.state.db.session() as db:
+            db.get(Card, cards[0]["id"]).version += 1
+        return original(snapshot)
+
+    app.state.ai.prepare_quiz = concurrent_edit
+    run_job(app.state.db, app.state.ai, job["id"])
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
+    with app.state.db.session() as db:
+        assert all(card.options == [] for card in db.scalars(select(Card)))
+
+
+def test_failed_preparation_retry_rejects_obsolete_snapshot(client, app):
+    topic, cards = saved_cards(client, app, "flashcard", 1)
+    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
+        "preparation_job"
+    ]
+    with app.state.db.session() as db:
+        db.get(Job, job["id"]).status = "failed"
+        db.get(Card, cards[0]["id"]).version += 1
+    response = client.post(f"/api/jobs/{job['id']}/retry")
+    assert response.status_code == 409, response.text
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"

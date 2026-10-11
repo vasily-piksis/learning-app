@@ -10,7 +10,7 @@ from .ai import AIError
 from .auth import require_user
 from .library import get_or_404
 from .models import Card, CardSource, Document, Explanation, Job, SourcePage, Topic, now
-from .quiz import prepare_options, save_options
+from .quiz import prepare_options, save_options, validate_preparation
 from .schemas import CardEdit, GenerateBody, GeneratedCard, SaveCards
 from .sources import source_data
 from .youtube import ingest_youtube
@@ -163,6 +163,8 @@ def run_job(database, ai, identifier):
             cards, reasons = generate(database, ai, payload)
             result = {"card_ids": [], "warnings": reasons}
         elif kind == "prepare_quiz":
+            with database.session() as db:
+                validate_preparation(db, payload)
             options = prepare_options(ai, payload)
             result = {"card_ids": [item.card_id for item in options]}
         elif kind == "explain":
@@ -289,6 +291,11 @@ def retry(identifier: int, request: Request):
             raise HTTPException(404, "Не найдено")
         if value.status != "failed":
             raise HTTPException(409, "Повторить можно только неудачную задачу")
+        if value.kind == "prepare_quiz":
+            try:
+                validate_preparation(db, value.payload)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
         value.status, value.error = "queued", None
         if value.kind in {"ingest", "youtube"}:
             db.get(Document, value.payload["document_id"]).status = "queued"

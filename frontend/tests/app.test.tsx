@@ -842,3 +842,38 @@ test("test preparation automatically opens the full topic test after completion"
   render(<App />)
   expect(await screen.findByRole("button", { name: /Нил/ })).toBeVisible()
 })
+
+test("failed preparation explicitly restarts with current topic questions", async () => {
+  window.location.hash = "#prepare/12"
+  let starts = 0
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/jobs/12": {
+      id: 12,
+      kind: "prepare_quiz",
+      status: "failed",
+      topic_ids: [1],
+      error: "Вопрос изменён во время подготовки теста. Запустите тест заново",
+    },
+    "POST /api/study": (init) => {
+      starts++
+      expect(JSON.parse(String(init?.body))).toEqual({
+        topic_ids: [1],
+        mode: "quiz",
+      })
+      return { preparation_job: { id: 13 } }
+    },
+    "GET /api/jobs/13": {
+      id: 13,
+      kind: "prepare_quiz",
+      status: "queued",
+      topic_ids: [1],
+    },
+  })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Запустить тест заново" })
+  )
+  await waitFor(() => expect(window.location.hash).toBe("#prepare/13"))
+  expect(starts).toBe(1)
+})
