@@ -83,7 +83,9 @@ def test_youtube_import_persists_timestamps_and_scopes_generation(client, app, m
         assert len(pages) == 2 and pages[0].start_seconds == 5.5
     app.state.ai = FixtureAI()
     another = make_topic(client, "Рим")
-    other = client.post(f"/api/topics/{another}/youtube", json={"url": URL}).json()
+    other = client.post(
+        f"/api/topics/{another}/youtube", json={"url": URL, "language": "ru"}
+    ).json()
     assert other["id"] != document["id"]
     job = client.post(
         "/api/generate", json={"topic_ids": [topic], "mode": "quiz", "count": 1}
@@ -127,7 +129,9 @@ def test_youtube_failure_retry_and_recovery(client, app, monkeypatch):
 
     monkeypatch.setattr(youtube, "fetch_transcript", blocked)
     topic = make_topic(client)
-    document = client.post(f"/api/topics/{topic}/youtube", json={"url": URL}).json()
+    document = client.post(
+        f"/api/topics/{topic}/youtube", json={"url": URL, "language": "ru"}
+    ).json()
     run_job(app.state.db, app.state.ai, document["job_id"])
     listed = client.get(f"/api/topics/{topic}/documents").json()[0]
     assert listed["status"] == "failed" and "YouTube" in listed["error"]
@@ -184,7 +188,9 @@ def test_cached_transcript_recovery_does_not_fetch_again(client, app, monkeypatc
 
     monkeypatch.setattr(youtube, "fetch_transcript", must_not_fetch)
     topic = make_topic(client)
-    document = client.post(f"/api/topics/{topic}/youtube", json={"url": URL}).json()
+    document = client.post(
+        f"/api/topics/{topic}/youtube", json={"url": URL, "language": "ru"}
+    ).json()
     with app.state.db.session() as db:
         value = db.get(Document, document["id"])
         saved = youtube.normalize_transcript(fetched())
@@ -260,3 +266,44 @@ def test_transport_follows_small_redirects_with_bounded_hops():
         with pytest.raises(TooManyRedirects):
             session.get("https://www.youtube.com/start")
         assert adapter.calls == 4
+
+
+def test_original_track_resolution_and_auto_explicit_import_converge(client, app, monkeypatch):
+    from app import youtube
+
+    tracks = [
+        {"language": "pl", "name": "Polski", "is_generated": True},
+        {"language": "en", "name": "English", "is_generated": False},
+    ]
+    monkeypatch.setattr(youtube, "list_tracks", lambda video: tracks)
+    result = client.post("/api/youtube/resolve", json={"url": URL})
+    assert result.status_code == 200, result.text
+    assert result.json()["selected_language"] == "pl"
+    topic = make_topic(client)
+    auto = client.post(f"/api/topics/{topic}/youtube", json={"url": URL}).json()
+    explicit = client.post(
+        f"/api/topics/{topic}/youtube", json={"url": URL, "language": "pl"}
+    ).json()
+    assert auto["id"] == explicit["id"] and explicit["duplicate"] is True
+    assert auto["language"] == "pl"
+    tracks[:] = [
+        {"language": "en", "name": "English", "is_generated": False},
+        {"language": "lt", "name": "Lietuvių", "is_generated": False},
+    ]
+    resolved = client.post("/api/youtube/resolve", json={"url": URL}).json()
+    assert resolved["selected_language"] is None and len(resolved["tracks"]) == 2
+    assert client.post(f"/api/topics/{topic}/youtube", json={"url": URL}).status_code == 422
+    tracks[:] = [tracks[1]]
+    assert (
+        client.post("/api/youtube/resolve", json={"url": URL}).json()["selected_language"] == "lt"
+    )
+
+
+def test_resolver_handles_unavailable_tracks_without_importing(client, monkeypatch):
+    from app import youtube
+
+    monkeypatch.setattr(youtube, "list_tracks", lambda video: [])
+    assert client.post("/api/youtube/resolve", json={"url": URL}).status_code == 422
+    assert (
+        client.post("/api/youtube/resolve", json={"url": "https://localhost/x"}).status_code == 422
+    )

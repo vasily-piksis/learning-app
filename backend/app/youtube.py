@@ -28,10 +28,13 @@ from .models import Document, Job, SourcePage, Topic
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
 
-class YouTubeBody(BaseModel):
+class VideoBody(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
-    language: str = Field(
-        default="ru", pattern=r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$", max_length=20
+
+
+class YouTubeBody(VideoBody):
+    language: str | None = Field(
+        default=None, pattern=r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$", max_length=20
     )
 
 
@@ -117,6 +120,53 @@ def fetch_transcript(video, language):
         raise ValueError("Не удалось получить субтитры YouTube. Попробуйте позже") from None
 
 
+def list_tracks(video):
+    try:
+        with TranscriptSession() as session:
+            tracks = YouTubeTranscriptApi(http_client=session).list(video)
+            return [
+                {
+                    "language": track.language_code,
+                    "name": track.language,
+                    "is_generated": track.is_generated,
+                }
+                for track in tracks
+            ]
+    except (IpBlocked, RequestBlocked):
+        raise ValueError(
+            "YouTube заблокировал получение субтитров с этого сервера. Попробуйте позже"
+        ) from None
+    except (TranscriptsDisabled, NoTranscriptFound):
+        raise ValueError("У видео нет доступных субтитров") from None
+    except (AgeRestricted, VideoUnavailable):
+        raise ValueError("Видео недоступно или имеет ограничение по возрасту") from None
+    except (YouTubeTranscriptApiException, RequestException):
+        raise ValueError("Не удалось получить субтитры YouTube. Попробуйте позже") from None
+
+
+def resolve_tracks(video):
+    tracks = list_tracks(video)
+    if not tracks:
+        raise ValueError("У видео нет доступных субтитров")
+    generated = {track["language"] for track in tracks if track["is_generated"]}
+    languages = {track["language"] for track in tracks}
+    selected = (
+        next(iter(generated))
+        if len(generated) == 1
+        else (next(iter(languages)) if len(languages) == 1 else None)
+    )
+    return {"tracks": tracks, "selected_language": selected}
+
+
+@router.post("/youtube/resolve")
+def resolve_video(body: VideoBody):
+    try:
+        video, url = video_url(body.url)
+        return {"url": url, **resolve_tracks(video)}
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+
+
 def normalize_transcript(transcript):
     segments, length = [], 0
     for snippet in transcript.snippets:
@@ -147,11 +197,14 @@ def normalize_transcript(transcript):
 def add_youtube(identifier: int, body: YouTubeBody, request: Request):
     try:
         video, url = video_url(body.url)
+        language = body.language or resolve_tracks(video)["selected_language"]
+        if not language:
+            raise ValueError("Выберите исходный язык из доступных дорожек субтитров")
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     user = require_user(request)
     database = request.app.state.db
-    digest = hashlib.sha256(f"youtube:{video}:{body.language}".encode()).hexdigest()
+    digest = hashlib.sha256(f"youtube:{video}:{language}".encode()).hexdigest()
     try:
         with database.session() as db:
             topic = get_or_404(db, Topic, identifier)
@@ -159,7 +212,7 @@ def add_youtube(identifier: int, body: YouTubeBody, request: Request):
                 select(Document).where(Document.topic_id == identifier, Document.sha256 == digest)
             )
             if duplicate:
-                return document_data(db, duplicate)
+                return {**document_data(db, duplicate), "duplicate": True}
             document = Document(
                 topic_id=identifier,
                 name=f"YouTube · {video}",
@@ -169,14 +222,14 @@ def add_youtube(identifier: int, body: YouTubeBody, request: Request):
                 sha256=digest,
                 page_count=0,
                 source_url=url,
-                source_meta={"video_id": video, "language": body.language},
+                source_meta={"video_id": video, "language": language},
             )
             db.add(document)
             db.flush()
             topic.version += 1
             db.add(Job(user_id=user.id, kind="youtube", payload={"document_id": document.id}))
             db.flush()
-            return document_data(db, document)
+            return {**document_data(db, document), "duplicate": False}
     except IntegrityError:
         with database.session() as db:
             duplicate = db.scalar(
@@ -184,7 +237,7 @@ def add_youtube(identifier: int, body: YouTubeBody, request: Request):
             )
             if not duplicate:
                 raise
-            return document_data(db, duplicate)
+            return {**document_data(db, duplicate), "duplicate": True}
 
 
 def ingest_youtube(database, payload):
@@ -217,6 +270,7 @@ def ingest_youtube(database, payload):
                         document_id=document.id,
                         number=number,
                         text=segment["text"],
+                        language=saved["language"],
                         start_seconds=segment["start"],
                         end_seconds=segment["start"] + segment["duration"],
                         warnings=warnings if number == 1 else [],
