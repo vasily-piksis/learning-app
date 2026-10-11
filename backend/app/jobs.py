@@ -1,4 +1,5 @@
 import threading
+import unicodedata
 
 import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -16,6 +17,17 @@ from .youtube import ingest_youtube
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
 
+def question_key(topic_id, question, answer, language):
+    return (
+        topic_id,
+        *(
+            " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+            for value in (question, answer)
+        ),
+        language,
+    )
+
+
 def job_data(job):
     return {
         "id": job.id,
@@ -26,6 +38,8 @@ def job_data(job):
         "created": job.created.isoformat(),
         "updated": job.updated.isoformat(),
         "session_card_id": job.payload.get("session_card_id") if job.kind == "explain" else None,
+        "topic_ids": job.payload.get("topic_ids")
+        or [t["id"] for t in job.payload.get("topics", [])],
     }
 
 
@@ -75,6 +89,7 @@ def ingest(database, ai, payload):
                     document_id=identifier,
                     number=number,
                     text=result.text,
+                    language=getattr(result, "language", None),
                     warnings=result.warnings or (["Пустая страница"] if result.is_blank else []),
                 )
             )
@@ -88,7 +103,14 @@ def generate(database, ai, payload):
     topics = payload["topics"]
     for index, topic in enumerate(topics):
         count = payload["count"] // len(topics) + int(index < payload["count"] % len(topics))
-        generated = ai.generate(topic["id"], topic["sources"], payload["mode"], count)
+        generated = ai.generate(
+            topic["id"],
+            topic["sources"],
+            payload["mode"],
+            count,
+            target_language=payload.get("target_language"),
+            existing=topic.get("existing", []),
+        )
         if len(generated.cards) > count:
             raise ValueError("Модель превысила запрошенное число карточек")
         if generated.insufficient_reason:
@@ -97,6 +119,18 @@ def generate(database, ai, payload):
             if card.topic_id != topic["id"] or card.mode != payload["mode"]:
                 raise ValueError("Модель смешала темы или форматы карточек")
             check_refs(card.sources, topic["sources"])
+            languages = {
+                s.get("language")
+                for s in topic["sources"]
+                if (s["document_id"], s["page"]) in {(r.document_id, r.page) for r in card.sources}
+                and s.get("language")
+            }
+            target = payload.get("target_language")
+            if target and card.language and card.language != target:
+                raise ValueError("Модель вернула неверный язык перевода")
+            card.language = (
+                target or card.language or (next(iter(languages)) if len(languages) == 1 else None)
+            )
             results.append((card, topic["sources"]))
     return results, reasons
 
@@ -138,14 +172,29 @@ def run_job(database, ai, identifier):
         else:
             raise ValueError("Неизвестный тип задачи")
         with database.session() as db:
+            db.execute(text("BEGIN IMMEDIATE"))
             job = db.get(Job, identifier)
             if kind == "generate":
+                existing = {
+                    question_key(c.topic_id, c.question, c.answer, c.language)
+                    for c in db.scalars(select(Card))
+                }
+                skipped = 0
                 for generated, sources in cards:
+                    key = question_key(
+                        generated.topic_id, generated.question, generated.answer, generated.language
+                    )
+                    if key in existing:
+                        skipped += 1
+                        continue
+                    existing.add(key)
                     card = Card(
                         topic_id=generated.topic_id,
                         job_id=identifier,
                         question=generated.question,
                         answer=generated.answer,
+                        language=generated.language,
+                        target_language=payload.get("target_language"),
                         mode=generated.mode,
                         options=generated.options,
                         correct_index=generated.correct_index,
@@ -156,6 +205,8 @@ def run_job(database, ai, identifier):
                     page_map = {(s["document_id"], s["page"]): s["page_id"] for s in sources}
                     for key in {(r.document_id, r.page) for r in generated.sources}:
                         db.add(CardSource(card_id=card.id, page_id=page_map[key]))
+                if skipped:
+                    result["warnings"].append(f"Пропущено повторных вопросов: {skipped}")
             elif kind == "explain":
                 value = Explanation(
                     user_id=user_id,
@@ -265,7 +316,12 @@ def start_generation(body: GenerateBody, request: Request):
                     length += len(page.text)
             if not sources:
                 raise HTTPException(422, "В каждой выбранной теме нужны готовые материалы")
-            topics.append({"id": identifier, "sources": sources})
+            existing = [
+                {"question": c.question, "answer": c.answer, "language": c.language}
+                for c in db.scalars(select(Card).where(Card.topic_id == identifier))
+            ]
+            length += sum(len(c["question"]) + len(c["answer"]) for c in existing)
+            topics.append({"id": identifier, "sources": sources, "existing": existing})
         if length > 100000:
             raise HTTPException(
                 422, "Материалы превышают 100 000 символов. Выберите меньше документов"
@@ -273,7 +329,12 @@ def start_generation(body: GenerateBody, request: Request):
         value = Job(
             user_id=user.id,
             kind="generate",
-            payload={"topics": topics, "mode": body.mode, "count": body.count},
+            payload={
+                "topics": topics,
+                "mode": body.mode,
+                "count": body.count,
+                "target_language": body.target_language,
+            },
         )
         db.add(value)
         db.flush()
@@ -293,6 +354,8 @@ def card_data(db, card, include_text=False):
         "topic_id": card.topic_id,
         "question": card.question,
         "answer": card.answer,
+        "language": card.language,
+        "target_language": card.target_language,
         "mode": card.mode,
         "options": card.options,
         "correct_index": card.correct_index,

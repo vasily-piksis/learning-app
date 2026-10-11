@@ -33,6 +33,7 @@ class Extraction(Strict):
     text: str
     warnings: list[str]
     is_blank: bool = False
+    language: str | None = None
 
 
 class GeneratedCard(Strict):
@@ -43,6 +44,7 @@ class GeneratedCard(Strict):
     options: list[str]
     correct_index: int | None
     sources: list[SourceRef]
+    language: str | None = None
 
     @model_validator(mode="after")
     def semantic_fields(self):
@@ -72,7 +74,10 @@ class ExplanationResult(Strict):
 class GenerateBody(BaseModel):
     topic_ids: list[int] = Field(min_length=1, max_length=30)
     document_ids: list[int] | None = None
-    mode: Literal["flashcard", "quiz"]
+    mode: Literal["flashcard", "quiz"] = "quiz"
+    target_language: str | None = Field(
+        default=None, pattern=r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$", max_length=20
+    )
     count: int = Field(ge=1, le=30)
     allow_partial: bool = False
 

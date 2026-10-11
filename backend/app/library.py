@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from .auth import require_user
-from .models import Card, Document, Job, SourcePage, Subject, Topic
+from .models import Card, CardSource, Document, Job, SourcePage, Subject, Topic
 from .schemas import NameBody, TopicBody
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
@@ -164,6 +164,13 @@ def document_data(db, value):
         "source_url": value.source_url,
         "language": value.source_meta.get("language"),
         "is_generated": value.source_meta.get("is_generated"),
+        "used_for_questions": db.scalar(
+            select(CardSource.id)
+            .join(SourcePage, CardSource.page_id == SourcePage.id)
+            .where(SourcePage.document_id == value.id)
+            .limit(1)
+        )
+        is not None,
         "warnings": [
             {"page": page.number, "messages": page.warnings}
             for page in db.scalars(

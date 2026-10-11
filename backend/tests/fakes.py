@@ -14,7 +14,7 @@ class FixtureAI:
             raise ValueError("Страница не обработана")
         return Extraction(page=page_number, text=local_text or "Учебный текст о Ниле", warnings=[])
 
-    def generate(self, topic_id, sources, mode, count):
+    def generate(self, topic_id, sources, mode, count, target_language=None, existing=None):
         self.inputs.append((topic_id, sources))
         ref = SourceRef(
             document_id=999999 if self.invalid_source else sources[0]["document_id"],

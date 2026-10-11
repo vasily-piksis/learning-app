@@ -4,6 +4,7 @@ def source_data(document, page, include_text=False):
         "document_id": document.id,
         "name": document.name,
         "page": page.number,
+        "language": page.language or document.source_meta.get("language"),
     }
     if document.source_url and page.start_seconds is not None:
         value.update(
