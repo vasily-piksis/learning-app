@@ -35,8 +35,16 @@ export default function Materials({
       const body = new FormData()
       body.append("file", file)
       try {
-        await api(`/topics/${topic.id}/documents`, "POST", body)
-        toast.success(t("{name} сохранён", { name: file.name }))
+        const document = await api<Document>(
+          `/topics/${topic.id}/documents`,
+          "POST",
+          body
+        )
+        toast.success(
+          document.duplicate
+            ? t("Этот файл уже сохранён в теме")
+            : t("{name} сохранён", { name: file.name })
+        )
       } catch (e) {
         failed.push(file)
         setError(errorText(e))

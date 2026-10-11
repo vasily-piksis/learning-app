@@ -129,6 +129,13 @@ def generate(database, ai, payload):
             target = payload.get("target_language")
             if target and card.language and card.language != target:
                 raise ValueError("Модель вернула неверный язык перевода")
+            if (
+                not target
+                and len(languages) == 1
+                and card.language
+                and card.language not in languages
+            ):
+                raise ValueError("Модель изменила язык исходного материала")
             card.language = (
                 target or card.language or (next(iter(languages)) if len(languages) == 1 else None)
             )

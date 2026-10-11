@@ -27,7 +27,9 @@ test("Polish is default and interface language changes persist without changing 
   )
   const view = render(<App />)
   expect(await screen.findByRole("link", { name: "Biblioteka" })).toBeVisible()
-  expect(screen.getByRole("link", { name: "English literature" })).toBeVisible()
+  expect(
+    await screen.findByRole("link", { name: "English literature" })
+  ).toBeVisible()
   await userEvent.selectOptions(
     screen.getByRole("combobox", { name: "Język interfejsu" }),
     "en"
@@ -43,7 +45,9 @@ test("Polish is default and interface language changes persist without changing 
     "ru"
   )
   expect(await screen.findByRole("link", { name: "Библиотека" })).toBeVisible()
-  expect(screen.getByRole("link", { name: "English literature" })).toBeVisible()
+  expect(
+    await screen.findByRole("link", { name: "English literature" })
+  ).toBeVisible()
 })
 
 test("language switcher is available before login", async () => {

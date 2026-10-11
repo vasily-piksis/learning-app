@@ -1215,4 +1215,16 @@ export const translations: Record<string, { pl: string; en: string }> = {
     en: "Close",
   },
   Закрыть: { pl: "Zamknij", en: "Close" },
+  "Этот файл уже сохранён в теме": {
+    pl: "Ten plik jest już zapisany w tym temacie",
+    en: "This file is already saved in this topic",
+  },
+  "Модель изменила язык исходного материала": {
+    pl: "Model zmienił język materiału źródłowego",
+    en: "The model changed the source material language",
+  },
+  "Файл повреждён или имеет неподдерживаемый формат": {
+    pl: "Plik jest uszkodzony lub ma nieobsługiwany format",
+    en: "The file is damaged or has an unsupported format",
+  },
 }

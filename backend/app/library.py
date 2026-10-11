@@ -215,7 +215,7 @@ async def upload(identifier: int, request: Request, file: UploadFile):
             select(Document).where(Document.topic_id == identifier, Document.sha256 == digest)
         )
         if duplicate:
-            return document_data(db, duplicate)
+            return {**document_data(db, duplicate), "duplicate": True}
     filename = uuid.uuid4().hex
     path = database.settings.data_dir / "files" / filename
     path.write_bytes(data)
@@ -236,7 +236,7 @@ async def upload(identifier: int, request: Request, file: UploadFile):
             topic.version += 1
             db.add(Job(user_id=user.id, kind="ingest", payload={"document_id": value.id}))
             db.flush()
-            return document_data(db, value)
+            return {**document_data(db, value), "duplicate": False}
     except IntegrityError:
         path.unlink(missing_ok=True)
         with database.session() as db:
@@ -245,7 +245,7 @@ async def upload(identifier: int, request: Request, file: UploadFile):
             )
             if not duplicate:
                 raise
-            return document_data(db, duplicate)
+            return {**document_data(db, duplicate), "duplicate": True}
     except Exception:
         path.unlink(missing_ok=True)
         raise

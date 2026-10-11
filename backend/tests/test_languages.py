@@ -98,3 +98,39 @@ def test_language_metadata_and_duplicate_generation(client, app):
 
 def test_extraction_schema_keeps_optional_language_for_legacy_results():
     assert Extraction(page=1, text="Pilietis", warnings=[], language="lt").language == "lt"
+
+
+def test_generator_rejects_implicit_translation_of_known_source_language(client, app):
+    class WrongLanguageAI(FixtureAI):
+        def generate(self, *args, **kwargs):
+            result = super().generate(*args, **kwargs)
+            for card in result.cards:
+                card.language = "ru"
+            return result
+
+    app.state.ai = FixtureAI()
+    topic = make_topic(client)
+    document = ready_document(client, app, topic)
+    with app.state.db.session() as db:
+        db.scalar(
+            select(SourcePage).where(SourcePage.document_id == document["id"])
+        ).language = "pl"
+    app.state.ai = WrongLanguageAI()
+    job = client.post("/api/generate", json={"topic_ids": [topic], "count": 1}).json()
+    run_job(app.state.db, app.state.ai, job["id"])
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
+    assert client.get(f"/api/cards?job_id={job['id']}").json() == []
+
+
+def test_repeated_file_import_identifies_existing_material(client):
+    from conftest import pdf_bytes
+
+    topic = make_topic(client)
+    data = pdf_bytes()
+    first = client.post(
+        f"/api/topics/{topic}/documents", files={"file": ("first.pdf", data)}
+    ).json()
+    second = client.post(
+        f"/api/topics/{topic}/documents", files={"file": ("second.pdf", data)}
+    ).json()
+    assert first["id"] == second["id"] and second["duplicate"] is True
