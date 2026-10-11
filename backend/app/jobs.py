@@ -10,6 +10,7 @@ from .ai import AIError
 from .auth import require_user
 from .library import get_or_404
 from .models import Card, CardSource, Document, Explanation, Job, SourcePage, Topic, now
+from .quiz import prepare_options, save_options
 from .schemas import CardEdit, GenerateBody, GeneratedCard, SaveCards
 from .sources import source_data
 from .youtube import ingest_youtube
@@ -154,6 +155,9 @@ def run_job(database, ai, identifier):
         elif kind == "generate":
             cards, reasons = generate(database, ai, payload)
             result = {"card_ids": [], "warnings": reasons}
+        elif kind == "prepare_quiz":
+            options = prepare_options(ai, payload)
+            result = {"card_ids": [item.card_id for item in options]}
         elif kind == "explain":
             explanation = ai.explain(payload["snapshot"], payload["question"], payload["history"])
             check_refs(explanation.sources, payload["snapshot"]["sources"])
@@ -207,6 +211,8 @@ def run_job(database, ai, identifier):
                         db.add(CardSource(card_id=card.id, page_id=page_map[key]))
                 if skipped:
                     result["warnings"].append(f"Пропущено повторных вопросов: {skipped}")
+            elif kind == "prepare_quiz":
+                save_options(db, payload, options)
             elif kind == "explain":
                 value = Explanation(
                     user_id=user_id,
@@ -261,7 +267,7 @@ def job(identifier: int, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         value = get_or_404(db, Job, identifier)
-        if value.kind == "explain" and value.user_id != user.id:
+        if value.kind in {"explain", "prepare_quiz"} and value.user_id != user.id:
             raise HTTPException(404, "Не найдено")
         return job_data(value)
 
@@ -272,7 +278,7 @@ def retry(identifier: int, request: Request):
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         value = get_or_404(db, Job, identifier)
-        if value.kind == "explain" and value.user_id != user.id:
+        if value.kind in {"explain", "prepare_quiz"} and value.user_id != user.id:
             raise HTTPException(404, "Не найдено")
         if value.status != "failed":
             raise HTTPException(409, "Повторить можно только неудачную задачу")

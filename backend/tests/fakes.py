@@ -1,4 +1,11 @@
-from app.schemas import ExplanationResult, Extraction, Generated, GeneratedCard, SourceRef
+from app.schemas import (
+    ExplanationResult,
+    Extraction,
+    Generated,
+    GeneratedCard,
+    QuizOptions,
+    SourceRef,
+)
 
 
 class FixtureAI:
@@ -34,6 +41,11 @@ class FixtureAI:
                 for i in range(count)
             ],
             insufficient_reason=None,
+        )
+
+    def prepare_quiz(self, snapshot):
+        return QuizOptions(
+            card_id=snapshot["id"], options=[snapshot["answer"], "Волга", "Дон"], correct_index=0
         )
 
     def explain(self, snapshot, question, history):

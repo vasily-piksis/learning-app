@@ -2,6 +2,7 @@ import random
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 
@@ -9,6 +10,7 @@ from .auth import require_user
 from .jobs import card_data, job_data
 from .library import get_or_404
 from .models import Attempt, Card, Explanation, Job, SessionCard, StudySession, Topic, now
+from .quiz import preparation_job, quiz_ready
 
 router = APIRouter(prefix="/api/study", dependencies=[Depends(require_user)])
 
@@ -127,6 +129,7 @@ def new_session(db, user_id, topics, mode, snapshots):
 def start(body: StartBody, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
         for identifier in body.topic_ids:
             get_or_404(db, Topic, identifier)
         cards = list(
@@ -134,7 +137,6 @@ def start(body: StartBody, request: Request):
                 select(Card).where(
                     Card.topic_id.in_(body.topic_ids),
                     Card.status == "saved",
-                    Card.mode.in_(["quiz", "flashcard"] if body.mode == "flashcard" else ["quiz"]),
                 )
             )
         )
@@ -144,10 +146,22 @@ def start(body: StartBody, request: Request):
             raise HTTPException(
                 422, "Для одного занятия выберите меньше тем (максимум 300 карточек)"
             )
+        if body.mode == "quiz":
+            missing = [
+                card_data(db, card, include_text=True)
+                for card in sorted(cards, key=lambda c: c.id)
+                if not quiz_ready(card)
+            ]
+            if missing:
+                job = preparation_job(db, user.id, sorted(set(body.topic_ids)), missing)
+                return JSONResponse(status_code=202, content={"preparation_job": job_data(job)})
         snapshots = [card_data(db, card, include_text=True) for card in cards]
         if body.mode == "flashcard":
             for snapshot in snapshots:
                 snapshot.update(mode="flashcard", options=[], correct_index=None)
+        else:
+            for snapshot in snapshots:
+                snapshot["mode"] = "quiz"
         return new_session(
             db,
             user.id,

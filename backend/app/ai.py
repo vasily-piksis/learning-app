@@ -7,7 +7,7 @@ from openai import OpenAI, OpenAIError
 from PIL import Image, ImageOps
 from pydantic import ValidationError
 
-from .schemas import ExplanationResult, Extraction, Generated
+from .schemas import ExplanationResult, Extraction, Generated, QuizOptions
 
 
 class AIError(Exception):
@@ -128,6 +128,25 @@ class AI:
                 },
             ],
             18000,
+        )
+
+    def prepare_quiz(self, snapshot):
+        return self.parse(
+            QuizOptions,
+            [
+                {
+                    "role": "system",
+                    "content": RULES
+                    + "\nПодготовь от 2 до 6 различных вариантов для существующего вопроса. Язык вариантов — язык вопроса. Верни тот же card_id. Правильный вариант должен ДОСЛОВНО совпадать с answer, не меняй вопрос и ответ. Неверные варианты должны быть правдоподобными, но однозначно неверными по источникам.",
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"card_id": snapshot["id"], "card": snapshot}, ensure_ascii=False
+                    ),
+                },
+            ],
+            6000,
         )
 
     def explain(self, snapshot, question, history):

@@ -65,6 +65,22 @@ class Generated(Strict):
     insufficient_reason: str | None
 
 
+class QuizOptions(Strict):
+    card_id: int
+    options: list[str] = Field(min_length=2, max_length=6)
+    correct_index: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_options(self):
+        if (
+            self.correct_index >= len(self.options)
+            or len(set(self.options)) != len(self.options)
+            or any(not option.strip() for option in self.options)
+        ):
+            raise ValueError("Тесту нужны различные варианты и один правильный ответ")
+        return self
+
+
 class ExplanationResult(Strict):
     text: str
     example: str | None
