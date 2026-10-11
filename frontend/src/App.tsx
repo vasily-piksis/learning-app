@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import {
   BookOpen,
   LibraryBig,
-  Layers,
   History as HistoryIcon,
   LogOut,
   Heart,
@@ -14,7 +13,9 @@ import { api, APIError, errorText, setCsrf, navigate } from "@/api"
 import type { User } from "@/types"
 import Login from "@/features/Login"
 import Library from "@/features/Library"
-import Generation from "@/features/Generation"
+import Generation, { GenerationResult } from "@/features/Generation"
+import Topic from "@/features/Topic"
+import { Preparation } from "@/features/StartStudy"
 import Study from "@/features/Study"
 import History from "@/features/History"
 
@@ -35,7 +36,7 @@ export default function App() {
     [error, setError] = useState<string | null>(null),
     [authRevision, setAuthRevision] = useState(0)
   const route = useRoute(),
-    [page, kind, id] = route.split("?")[0].split("/")
+    [page, kind, id, section, cardId] = route.split("?")[0].split("/")
   useEffect(() => {
     let alive = true
     api<User>("/auth/me")
@@ -116,7 +117,6 @@ export default function App() {
         <nav className="main-nav" aria-label="Основная навигация">
           {[
             { key: "library", label: "Библиотека", icon: LibraryBig },
-            { key: "generate", label: "Карточки", icon: Layers },
             { key: "history", label: "История", icon: HistoryIcon },
           ].map((item) => (
             <a
@@ -156,7 +156,27 @@ export default function App() {
       </header>
       <main id="main" tabIndex={-1} className="main-content">
         <ErrorNotice message={error} />
-        {page === "generate" ? (
+        {page === "generation" ||
+        (page === "generate" &&
+          new URLSearchParams(route.split("?")[1]).has("job")) ? (
+          <GenerationResult
+            key={route}
+            id={Number(
+              page === "generation"
+                ? kind
+                : new URLSearchParams(route.split("?")[1]).get("job")
+            )}
+          />
+        ) : page === "prepare" ? (
+          <Preparation key={kind} id={Number(kind)} />
+        ) : page === "library" && kind === "topic" ? (
+          <Topic
+            key={`${id}/${section}/${cardId}`}
+            id={Number(id)}
+            section={section}
+            cardId={cardId ? Number(cardId) : undefined}
+          />
+        ) : page === "generate" ? (
           <Generation
             key={route}
             initialTopics={
@@ -174,7 +194,6 @@ export default function App() {
         ) : (
           <Library
             subjectId={kind === "subject" ? Number(id) : undefined}
-            topicId={kind === "topic" ? Number(id) : undefined}
             displayName={user.display_name}
           />
         )}

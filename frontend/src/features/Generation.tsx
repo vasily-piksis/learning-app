@@ -1,478 +1,263 @@
 import { useState } from "react"
-import { Layers, Check, FileText } from "lucide-react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Field,
   FieldGroup,
   FieldLabel,
   FieldDescription,
 } from "@/components/ui/field"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
 import {
-  PageHeading,
-  ErrorNotice,
-  Loading,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card"
+import {
   Blank,
+  Loading,
+  ErrorNotice,
   PendingIcon,
   JobNotice,
-  EditCard,
-  Sources,
+  PageHeading,
 } from "@/components/shared"
 import { api, useQuery, errorText, navigate } from "@/api"
-import type {
-  Topic,
-  Subject,
-  Document,
-  Mode,
-  Job,
-  Card as StudyCard,
-} from "@/types"
+import type { Topic, Document, Job } from "@/types"
+import Drafts from "./Drafts"
 
 export default function Generation({
   initialTopics,
 }: {
   initialTopics: number[]
 }) {
-  const topics = useQuery<Topic[]>("/topics"),
-    subjects = useQuery<Subject[]>("/subjects"),
-    jobs = useQuery<Job[]>("/jobs", 2500)
-  const [selected, setSelected] = useState(initialTopics),
-    [mode, setMode] = useState<Mode>("flashcard"),
+  const topics = useQuery<Topic[]>("/topics")
+  const id = initialTopics.length === 1 ? initialTopics[0] : null
+  const documents = useQuery<Document[]>(
+    id ? `/topics/${id}/documents` : null,
+    3000
+  )
+  const [selected, setSelected] = useState<number[] | null>(null),
     [count, setCount] = useState(10),
-    [partial, setPartial] = useState(false),
+    [translate, setTranslate] = useState(false),
+    [language, setLanguage] = useState("ru"),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState<string | null>(null),
-    [documents, setDocuments] = useState<Document[] | null>(null),
-    [docIds, setDocIds] = useState<number[] | null>(null)
-  const initialJob =
-    Number(
-      new URLSearchParams(window.location.hash.split("?")[1]).get("job")
-    ) || null
-  const [jobId, setJobId] = useState<number | null>(initialJob)
-  const activeJob = useQuery<Job>(
-    jobId ? `/jobs/${jobId}` : null,
-    jobId ? 2500 : 0
-  )
-  const validTopics = selected.filter((id) =>
-    topics.data?.some((t) => t.id === id)
-  )
-  async function loadDocuments() {
-    setBusy(true)
-    setError(null)
-    try {
-      const lists = await Promise.all(
-        validTopics.map((id) => api<Document[]>(`/topics/${id}/documents`))
-      )
-      const all = lists.flat()
-      setDocuments(all)
-      setDocIds(all.filter((d) => d.status === "ready").map((d) => d.id))
-    } catch (e) {
-      setError(errorText(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+    [error, setError] = useState<string | null>(null)
+  const available =
+    documents.data?.filter((document) => document.status === "ready") || []
+  const newIds = available
+    .filter((document) => !document.used_for_questions)
+    .map((document) => document.id)
+  const ids =
+    selected ||
+    (newIds.length ? newIds : available.map((document) => document.id))
   async function generate() {
     setBusy(true)
     setError(null)
     try {
       const job = await api<Job>("/generate", "POST", {
-        topic_ids: validTopics,
-        mode,
+        topic_ids: [id],
+        mode: "quiz",
         count,
-        allow_partial: partial,
-        document_ids: docIds,
+        document_ids: ids,
+        allow_partial: true,
+        target_language: translate ? language : null,
       })
-      setJobId(job.id)
-      jobs.refetch()
-    } catch (e) {
-      setError(errorText(e))
+      navigate(`generation/${job.id}`)
+    } catch (error) {
+      setError(errorText(error))
     } finally {
       setBusy(false)
     }
   }
-  return (
-    <div className="flex flex-col gap-8">
-      <PageHeading
-        eyebrow="Материалы становятся карточками"
-        title="Что повторим?"
-        description="Выбери темы. Каждый вопрос будет опираться только на их материалы."
-      />
-      <div className="generation-layout">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">Собери свой набор</CardTitle>
-            <CardDescription>
-              Одна тема или несколько — решаешь ты.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            <ErrorNotice
-              message={topics.error || subjects.error}
-              retry={() => {
-                topics.refetch()
-                subjects.refetch()
-              }}
-            />
-            {topics.loading ? (
-              <Loading />
-            ) : topics.data?.length ? (
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>1. Выбери темы</FieldLabel>
-                  <div className="topic-options">
-                    {topics.data.map((topic) => (
-                      <label
-                        key={topic.id}
-                        className={
-                          selected.includes(topic.id)
-                            ? "topic-option selected"
-                            : "topic-option"
-                        }
-                      >
-                        <Checkbox
-                          checked={selected.includes(topic.id)}
-                          onCheckedChange={(checked) => {
-                            setSelected((v) =>
-                              checked
-                                ? [...v, topic.id]
-                                : v.filter((id) => id !== topic.id)
-                            )
-                            setDocuments(null)
-                            setDocIds(null)
-                          }}
-                        />
-                        <span>
-                          <strong>{topic.name}</strong>
-                          <small>
-                            {
-                              subjects.data?.find(
-                                (s) => s.id === topic.subject_id
-                              )?.name
-                            }{" "}
-                            · {topic.document_count} материалов
-                          </small>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </Field>
-              </FieldGroup>
-            ) : (
-              <Blank
-                title="Сначала добавь тему"
-                description="Создай предмет и загрузи материалы в библиотеку."
-                action={
-                  <Button asChild>
-                    <a href="#library">В библиотеку</a>
-                  </Button>
-                }
-              />
-            )}
-            <FieldGroup>
-              <Field>
-                <FieldLabel>2. Формат</FieldLabel>
-                <div className="format-switch">
-                  {(["flashcard", "quiz"] as const).map((value) => (
-                    <Button
-                      key={value}
-                      variant={mode === value ? "default" : "outline"}
-                      aria-pressed={mode === value}
-                      onClick={() => setMode(value)}
-                    >
-                      {value === "flashcard"
-                        ? "Флеш-карты"
-                        : "Тест с вариантами"}
-                    </Button>
-                  ))}
-                </div>
-                <FieldDescription>
-                  {mode === "flashcard"
-                    ? "Вспомни ответ, открой карточку и оцени себя."
-                    : "Выбери вариант — правильный ответ появится после проверки."}
-                </FieldDescription>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="count">3. Сколько карточек?</FieldLabel>
-                <Input
-                  className="max-w-32"
-                  id="count"
-                  type="number"
-                  min={Math.max(1, validTopics.length)}
-                  max={30}
-                  value={count}
-                  onChange={(e) => setCount(Number(e.target.value))}
-                />
-                <FieldDescription>
-                  От {Math.max(1, validTopics.length)} до 30. На каждую тему —
-                  хотя бы один вопрос.
-                </FieldDescription>
-              </Field>
-              <Field orientation="horizontal">
-                <Checkbox
-                  id="partial"
-                  checked={partial}
-                  onCheckedChange={(v) => setPartial(v === true)}
-                />
-                <FieldLabel htmlFor="partial">
-                  Можно использовать только готовые материалы
-                </FieldLabel>
-              </Field>
-            </FieldGroup>
-            {validTopics.length > 0 && (
-              <Button
-                variant="outline"
-                onClick={() => void loadDocuments()}
-                disabled={busy}
-              >
-                <FileText data-icon="inline-start" />
-                Выбрать отдельные документы
-              </Button>
-            )}
-            {documents && (
-              <div className="flex flex-col gap-3">
-                <p className="text-sm text-muted-foreground">
-                  Отмеченные документы ограничивают материалы генерации.
-                </p>
-                {documents.map((d) => (
-                  <label key={d.id} className="flex items-center gap-3 text-sm">
-                    <Checkbox
-                      checked={docIds?.includes(d.id)}
-                      disabled={d.status !== "ready"}
-                      onCheckedChange={(v) =>
-                        setDocIds((ids) =>
-                          v
-                            ? [...(ids || []), d.id]
-                            : (ids || []).filter((id) => id !== d.id)
-                        )
-                      }
-                    />
-                    <span className="break-words">
-                      {d.name} · {d.status === "ready" ? "готов" : "не готов"}
-                    </span>
-                  </label>
-                ))}
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setDocuments(null)
-                    setDocIds(null)
-                  }}
-                >
-                  Использовать все документы тем
-                </Button>
-              </div>
-            )}
-            <ErrorNotice message={error} />
-          </CardContent>
-          <CardFooter>
-            <Button
-              className="w-full"
-              onClick={() => void generate()}
-              disabled={
-                busy ||
-                !validTopics.length ||
-                count < validTopics.length ||
-                count > 30 ||
-                count < 1 ||
-                !!topics.error ||
-                (docIds !== null && !docIds.length)
-              }
-            >
-              {busy ? <PendingIcon /> : <Layers data-icon="inline-start" />}
-              Создать карточки
+  if (!id)
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeading
+          eyebrow="Вопросы"
+          title="Выбери тему"
+          description="Создание вопросов открывается внутри конкретной темы."
+        />
+        {topics.loading ? (
+          <Loading />
+        ) : (
+          topics.data?.map((topic) => (
+            <Button key={topic.id} variant="outline" asChild>
+              <a href={`#library/topic/${topic.id}/create`}>{topic.name}</a>
             </Button>
-          </CardFooter>
-        </Card>
-        <div className="flex flex-col gap-6">
-          <Alert>
-            <Layers />
-            <AlertTitle>Сначала проверим вопросы</AlertTitle>
-            <AlertDescription>
-              Новый набор сохранится как черновик. Ты сможешь поправить
-              формулировки и выбрать карточки для занятий.
-            </AlertDescription>
-          </Alert>
-          <ErrorNotice message={activeJob.error} retry={activeJob.refetch} />
-          {activeJob.data && (
-            <>
-              <JobNotice
-                job={activeJob.data}
-                retry={async () => {
-                  try {
-                    await api(`/jobs/${jobId}/retry`, "POST")
-                    activeJob.refetch()
-                  } catch (e) {
-                    setError(errorText(e))
-                  }
-                }}
-              />
-              {activeJob.data.status === "succeeded" && (
-                <Drafts key={jobId} job={activeJob.data} />
-              )}
-            </>
-          )}
-          <Card>
-            <CardHeader>
-              <CardTitle>Твои наборы</CardTitle>
-              <CardDescription>
-                Результаты останутся здесь, даже если закрыть страницу.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ErrorNotice message={jobs.error} retry={jobs.refetch} />
-              {jobs.data?.filter((j) => j.kind === "generate").length ? (
-                <div className="flex flex-col gap-2">
-                  {jobs.data
-                    .filter((j) => j.kind === "generate")
-                    .map((job) => (
-                      <Button
-                        key={job.id}
-                        variant={job.id === jobId ? "secondary" : "ghost"}
-                        className="justify-between"
-                        onClick={() => setJobId(job.id)}
-                      >
-                        <span>Набор #{job.id}</span>
-                        <Badge variant="outline">
-                          {
-                            (
-                              {
-                                succeeded: "Готов",
-                                failed: "Ошибка",
-                                running: "Готовим",
-                                queued: "В очереди",
-                              } as Record<string, string>
-                            )[job.status]
-                          }
-                        </Badge>
-                      </Button>
-                    ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Пока нет наборов. Начнём с одной темы?
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
-  )
-}
-function Drafts({ job }: { job: Job }) {
-  const cards = useQuery<StudyCard[]>(`/cards?job_id=${job.id}`),
-    [selected, setSelected] = useState<number[]>([]),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState<string | null>(null)
-  const drafts = cards.data?.filter((c) => c.status === "draft") || []
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="section-toolbar">
-        <h2>Проверим карточки</h2>
-        <Button
-          variant="ghost"
-          disabled={!drafts.length}
-          onClick={() => setSelected(drafts.map((c) => c.id))}
-        >
-          Выбрать все
+          ))
+        )}
+        <Button asChild variant="ghost">
+          <a href="#library">В библиотеку</a>
         </Button>
       </div>
-      {job.result?.warnings?.map((warning, i) => (
-        <Alert key={i}>
-          <AlertTitle>Материалов оказалось меньше</AlertTitle>
-          <AlertDescription>{warning}</AlertDescription>
-        </Alert>
-      ))}
-      <ErrorNotice message={cards.error || error} retry={cards.refetch} />
-      {cards.loading ? (
-        <Loading />
-      ) : cards.data?.length ? (
-        cards.data.map((card) => (
-          <Card key={card.id}>
-            <CardHeader>
-              <div className="flex items-start gap-3">
-                {card.status === "draft" ? (
+    )
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Создать вопросы</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        <ErrorNotice
+          message={documents.error || error}
+          retry={documents.refetch}
+        />
+        {documents.loading ? (
+          <Loading />
+        ) : available.length ? (
+          <FieldGroup>
+            <Field>
+              <FieldLabel>Материалы для вопросов</FieldLabel>
+              <FieldDescription>
+                Сначала выбраны новые материалы. Можно выбрать другие или
+                использовать все готовые.
+              </FieldDescription>
+              {available.map((document) => (
+                <label key={document.id} className="flex items-start gap-3">
                   <Checkbox
-                    aria-label={`Выбрать: ${card.question}`}
-                    checked={selected.includes(card.id)}
-                    onCheckedChange={(v) =>
-                      setSelected((ids) =>
-                        v
-                          ? [...ids, card.id]
-                          : ids.filter((id) => id !== card.id)
+                    checked={ids.includes(document.id)}
+                    disabled={busy}
+                    onCheckedChange={(checked) =>
+                      setSelected(
+                        checked
+                          ? [...ids, document.id]
+                          : ids.filter((id) => id !== document.id)
                       )
                     }
                   />
-                ) : (
-                  <Badge variant="secondary">Сохранена</Badge>
-                )}
-                <CardTitle>{card.question}</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <p className="whitespace-pre-wrap">{card.answer}</p>
-              {card.mode === "quiz" && (
-                <ol className="flex flex-col gap-2">
-                  {card.options.map((v, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      {i === card.correct_index && (
-                        <Check className="size-4 text-primary" />
-                      )}
-                      {v}
-                    </li>
-                  ))}
-                </ol>
-              )}
-              <Sources sources={card.sources} />
-            </CardContent>
-            <CardFooter>
-              <EditCard card={card} onSaved={cards.refetch} />
-            </CardFooter>
-          </Card>
-        ))
-      ) : (
-        <Blank
-          title="Карточки не созданы"
-          description="Попробуй добавить материалы или запросить меньше вопросов."
-        />
-      )}
-      {drafts.length > 0 && (
-        <Button
-          disabled={busy || !selected.length}
-          onClick={async () => {
-            setBusy(true)
-            try {
-              await api("/cards/save", "POST", { card_ids: selected })
-              toast.success("Карточки сохранены в темах")
-              setSelected([])
-              cards.refetch()
-            } catch (e) {
-              setError(errorText(e))
-            } finally {
-              setBusy(false)
+                  <span className="break-words">
+                    {document.name}
+                    {!document.used_for_questions && (
+                      <small className="block text-muted-foreground">
+                        Новый материал
+                      </small>
+                    )}
+                  </span>
+                </label>
+              ))}
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  setSelected(available.map((document) => document.id))
+                }
+              >
+                Выбрать все готовые
+              </Button>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="count">Сколько вопросов?</FieldLabel>
+              <Input
+                id="count"
+                type="number"
+                min={1}
+                max={30}
+                value={count}
+                disabled={busy}
+                onChange={(event) => setCount(Number(event.target.value))}
+              />
+              <FieldDescription>
+                От 1 до 30. Каждый вопрос подходит для флеш-карт и теста.
+              </FieldDescription>
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox
+                id="translate"
+                checked={translate}
+                disabled={busy}
+                onCheckedChange={(value) => setTranslate(value === true)}
+              />
+              <FieldLabel htmlFor="translate">
+                Перевести вопросы на другой язык
+              </FieldLabel>
+            </Field>
+            {translate ? (
+              <Field>
+                <FieldLabel htmlFor="target-language">Язык перевода</FieldLabel>
+                <Input
+                  id="target-language"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  pattern="[a-z]{2,3}(-[A-Za-z0-9]{2,8})?"
+                  maxLength={20}
+                />
+                <FieldDescription>
+                  pl — польский, en — английский, ru — русский, lt — литовский.
+                </FieldDescription>
+              </Field>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Вопросы будут на языке исходных материалов.
+              </p>
+            )}
+          </FieldGroup>
+        ) : (
+          <Blank
+            title="Нужны готовые материалы"
+            description="Добавь материал или дождись обработки."
+            action={
+              <Button asChild>
+                <a href={`#library/topic/${id}/materials`}>К материалам</a>
+              </Button>
             }
-          }}
+          />
+        )}
+      </CardContent>
+      <CardFooter>
+        <Button
+          disabled={
+            busy ||
+            !ids.length ||
+            !Number.isInteger(count) ||
+            count < 1 ||
+            count > 30 ||
+            (translate && !/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/.test(language))
+          }
+          onClick={() => void generate()}
         >
-          {busy && <PendingIcon />}Сохранить выбранные ({selected.length})
+          {busy && <PendingIcon />}Создать вопросы
         </Button>
-      )}
-      {cards.data?.some((c) => c.status === "saved") && (
-        <Button variant="outline" onClick={() => navigate("library")}>
-          Перейти к занятиям
-        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
+export function GenerationResult({ id }: { id: number }) {
+  const job = useQuery<Job>(`/jobs/${id}`, 1500)
+  const [error, setError] = useState<string | null>(null)
+  const topicId =
+    job.data?.topic_ids?.length === 1 ? job.data.topic_ids[0] : null
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeading
+        eyebrow="Вопросы"
+        title={
+          job.data?.status === "succeeded"
+            ? "Проверь новые вопросы"
+            : "Создаём вопросы"
+        }
+        description="Результат сохраняется после закрытия страницы."
+      />
+      <Button variant="ghost" asChild>
+        <a href={topicId ? `#library/topic/${topicId}` : "#library"}>К теме</a>
+      </Button>
+      <ErrorNotice message={job.error || error} retry={job.refetch} />
+      {job.loading ? (
+        <Loading />
+      ) : job.data?.status === "succeeded" ? (
+        <Drafts job={job.data} />
+      ) : (
+        job.data && (
+          <JobNotice
+            job={job.data}
+            retry={() =>
+              void api(`/jobs/${id}/retry`, "POST")
+                .then(job.refetch)
+                .catch((error) => setError(errorText(error)))
+            }
+          />
+        )
       )}
     </div>
   )

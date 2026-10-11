@@ -28,6 +28,8 @@ export type Document = {
   source_url?: string | null
   language?: string | null
   is_generated?: boolean | null
+  used_for_questions?: boolean
+  duplicate?: boolean
 }
 export type Source = {
   document_id: number
@@ -49,6 +51,9 @@ export type Card = {
   status: string
   sources: Source[]
   revealed?: boolean
+  job_id?: number
+  language?: string | null
+  target_language?: string | null
 }
 export type Job = {
   id: number
@@ -56,6 +61,7 @@ export type Job = {
   status: string
   error: string | null
   created: string
+  topic_ids?: number[]
   result: {
     card_ids?: number[]
     warnings?: string[]

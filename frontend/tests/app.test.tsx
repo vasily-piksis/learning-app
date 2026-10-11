@@ -154,7 +154,7 @@ test("edits a generated draft and saves only selected cards", async () => {
   expect(await screen.findByText("Сохранена")).toBeVisible()
 })
 
-test("generation requires explicitly selected topics", async () => {
+test("legacy generation entry requires choosing a concrete topic", async () => {
   window.location.hash = "#generate"
   server({
     "GET /api/auth/me": user,
@@ -163,19 +163,19 @@ test("generation requires explicitly selected topics", async () => {
         id: 1,
         subject_id: 1,
         name: "Египет",
-        version: 1,
-        card_count: 0,
         document_count: 1,
+        card_count: 0,
       },
     ],
-    "GET /api/subjects": [{ id: 1, name: "История", topic_count: 1 }],
-    "GET /api/jobs": [],
   })
   render(<App />)
-  const button = await screen.findByRole("button", { name: "Создать карточки" })
-  expect(button).toBeDisabled()
-  await userEvent.click(await screen.findByRole("checkbox", { name: /Египет/ }))
-  expect(button).toBeEnabled()
+  expect(await screen.findByRole("link", { name: "Египет" })).toHaveAttribute(
+    "href",
+    "#library/topic/1/create"
+  )
+  expect(
+    screen.queryByRole("button", { name: "Создать вопросы" })
+  ).not.toBeInTheDocument()
 })
 
 test("quiz waits for saved answer before allowing the next card", async () => {
@@ -245,7 +245,7 @@ test("quiz waits for saved answer before allowing the next card", async () => {
 })
 
 test("starts study with only explicitly selected topics and chosen format", async () => {
-  window.location.hash = "#library"
+  window.location.hash = "#library/subject/1"
   let submitted: unknown
   server({
     "GET /api/auth/me": user,
@@ -369,7 +369,7 @@ test("ambiguous flashcard save retries the original grade without offering a new
 })
 
 test("changing subject cannot submit a previously selected hidden topic", async () => {
-  window.location.hash = "#library"
+  window.location.hash = "#library/subject/1"
   server({
     "GET /api/auth/me": user,
     "GET /api/subjects": [
@@ -410,7 +410,7 @@ test("changing subject cannot submit a previously selected hidden topic", async 
 })
 
 test("adds a YouTube link in its topic and shows transcript language and errors", async () => {
-  window.location.hash = "#library/topic/1"
+  window.location.hash = "#library/topic/1/materials"
   const documents: unknown[] = []
   server({
     "GET /api/auth/me": user,
@@ -427,6 +427,10 @@ test("adds a YouTube link in its topic and shows transcript language and errors"
     ],
     "GET /api/topics/1/documents": () => documents,
     "GET /api/cards?topic_id=1": [],
+    "POST /api/youtube/resolve": {
+      tracks: [{ language: "en", name: "English", is_generated: true }],
+      selected_language: "en",
+    },
     "POST /api/topics/1/youtube": (init) => {
       expect(JSON.parse(String(init?.body))).toEqual({
         url: "https://youtu.be/dQw4w9WgXcQ",
@@ -455,8 +459,7 @@ test("adds a YouTube link in its topic and shows transcript language and errors"
     screen.getByLabelText("Ссылка YouTube"),
     "https://youtu.be/dQw4w9WgXcQ"
   )
-  await userEvent.clear(screen.getByLabelText("Язык субтитров"))
-  await userEvent.type(screen.getByLabelText("Язык субтитров"), "en")
+  expect(screen.queryByLabelText("Язык субтитров")).not.toBeInTheDocument()
   await userEvent.click(add)
   expect(await screen.findByText("Субтитры недоступны")).toBeVisible()
   expect(
@@ -622,7 +625,7 @@ test("saved quiz cards also enable flashcard repetition in the topic", async () 
   })
   render(<App />)
   const repeat = await screen.findByRole("button", {
-    name: "Повторить",
+    name: "Флеш-карты",
     exact: true,
   })
   expect(repeat).toBeEnabled()
@@ -633,4 +636,204 @@ test("saved quiz cards also enable flashcard repetition in the topic", async () 
   expect(
     screen.queryByRole("button", { name: /Tauta/ })
   ).not.toBeInTheDocument()
+})
+
+test("topic overview separates study from questions and materials", async () => {
+  window.location.hash = "#library/topic/1"
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/subjects": [{ id: 1, name: "История", topic_count: 1 }],
+    "GET /api/topics": [
+      {
+        id: 1,
+        subject_id: 1,
+        name: "Египет",
+        version: 1,
+        card_count: 1,
+        document_count: 1,
+      },
+    ],
+    "GET /api/cards?topic_id=1": [
+      {
+        id: 1,
+        topic_id: 1,
+        question: "Главная река?",
+        answer: "Нил",
+        mode: "quiz",
+        status: "saved",
+        options: ["Нил", "Дон"],
+        sources: [],
+      },
+    ],
+    "GET /api/jobs": [],
+  })
+  render(<App />)
+  expect(
+    await screen.findByRole("button", { name: "Флеш-карты", exact: true })
+  ).toBeEnabled()
+  expect(
+    screen.getByRole("button", { name: "Тест", exact: true })
+  ).toBeEnabled()
+  expect(screen.getByRole("link", { name: /Вопросы/ })).toHaveAttribute(
+    "href",
+    "#library/topic/1/questions"
+  )
+  expect(screen.getByRole("link", { name: /Материалы/ })).toHaveAttribute(
+    "href",
+    "#library/topic/1/materials"
+  )
+  expect(screen.queryByText("Нил")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("Ссылка YouTube")).not.toBeInTheDocument()
+  expect(screen.queryByText("Собери свой набор")).not.toBeInTheDocument()
+})
+
+test("library home shows subjects before their topics", async () => {
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/subjects": [{ id: 1, name: "История", topic_count: 1 }],
+    "GET /api/topics": [
+      {
+        id: 1,
+        subject_id: 1,
+        name: "Египет",
+        card_count: 1,
+        document_count: 1,
+      },
+    ],
+  })
+  render(<App />)
+  expect(
+    await within(screen.getByRole("main")).findByRole("link", {
+      name: "История",
+    })
+  ).toHaveAttribute("href", "#library/subject/1")
+  expect(screen.queryByRole("link", { name: "Египет" })).not.toBeInTheDocument()
+  await userEvent.click(
+    within(screen.getByRole("main")).getByRole("link", { name: "История" })
+  )
+  expect(await screen.findByRole("link", { name: "Египет" })).toHaveAttribute(
+    "href",
+    "#library/topic/1"
+  )
+})
+
+test("question list opens one answer on a separate detail page", async () => {
+  window.location.hash = "#library/topic/1/questions"
+  const card = {
+    id: 1,
+    topic_id: 1,
+    question: "Главная река?",
+    answer: "Нил",
+    mode: "quiz",
+    status: "saved",
+    options: ["Нил", "Дон"],
+    sources: [],
+  }
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/topics": [
+      {
+        id: 1,
+        subject_id: 1,
+        name: "Египет",
+        card_count: 1,
+        document_count: 1,
+      },
+    ],
+    "GET /api/cards?topic_id=1": [card],
+    "GET /api/jobs": [],
+  })
+  render(<App />)
+  await screen.findByRole("link", { name: "Главная река?" })
+  expect(screen.queryByText("Нил")).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("link", { name: "Главная река?" }))
+  expect(
+    await screen.findByText("Нил", { exact: true, selector: "p" })
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Изменить карточку" })
+  ).toBeEnabled()
+})
+
+test("topic creation selects new materials and generates a bank for both modes", async () => {
+  window.location.hash = "#library/topic/1/create"
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/topics": [
+      {
+        id: 1,
+        subject_id: 1,
+        name: "Египет",
+        card_count: 1,
+        document_count: 2,
+      },
+    ],
+    "GET /api/topics/1/documents": [
+      { id: 1, name: "old.pdf", status: "ready", used_for_questions: true },
+      { id: 2, name: "new.pdf", status: "ready", used_for_questions: false },
+    ],
+    "POST /api/generate": (init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        topic_ids: [1],
+        mode: "quiz",
+        count: 10,
+        document_ids: [2],
+        allow_partial: true,
+        target_language: null,
+      })
+      return { id: 5 }
+    },
+    "GET /api/jobs/5": {
+      id: 5,
+      kind: "generate",
+      status: "queued",
+      topic_ids: [1],
+    },
+  })
+  render(<App />)
+  const create = await screen.findByRole("button", { name: "Создать вопросы" })
+  await waitFor(() => expect(create).toBeEnabled())
+  expect(screen.queryByText("Формат")).not.toBeInTheDocument()
+  await userEvent.click(create)
+  expect(await screen.findByText("Создаём вопросы")).toBeVisible()
+  expect(screen.queryByText("Материалы для вопросов")).not.toBeInTheDocument()
+})
+
+test("test preparation automatically opens the full topic test after completion", async () => {
+  window.location.hash = "#prepare/12"
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/jobs/12": {
+      id: 12,
+      kind: "prepare_quiz",
+      status: "succeeded",
+      topic_ids: [1],
+    },
+    "POST /api/study": (init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        topic_ids: [1],
+        mode: "quiz",
+      })
+      return { id: 15 }
+    },
+    "GET /api/study/15": {
+      id: 15,
+      topic_names: ["Египет"],
+      mode: "quiz",
+      status: "active",
+      count: 1,
+      position: 0,
+      answered: 0,
+      card: {
+        id: 1,
+        question: "Главная река?",
+        options: ["Нил", "Дон"],
+        sources: [],
+      },
+    },
+    "GET /api/study/15/explanations?position=0": [],
+    "GET /api/study/15/explanation-jobs?position=0": [],
+  })
+  render(<App />)
+  expect(await screen.findByRole("button", { name: /Нил/ })).toBeVisible()
 })
