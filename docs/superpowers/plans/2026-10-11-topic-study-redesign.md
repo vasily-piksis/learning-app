@@ -1,6 +1,6 @@
 # Topic study and languages Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Start either study mode from a topic, separate management screens,
 preserve source languages and offer Polish, English and Russian UI.
@@ -51,16 +51,16 @@ compatibility, adds target_language. Source includes nullable language;
 Card responses/snapshots include language and target_language;
 Document response includes `used_for_questions` from generation payloads.
 
-- [ ] Write tests capturing AI system/user inputs for Polish/Lithuanian/English
+- [x] Write tests capturing AI system/user inputs for Polish/Lithuanian/English
   extraction, generation and explanation; assert no forced Russian, target
   language is explicit and store=False/typed parsing remain.
-- [ ] Run `.venv/bin/pytest -q backend/tests/test_languages.py`; expect failures.
-- [ ] Implement migration, language policy and metadata propagation. Keep older
+- [x] Run `.venv/bin/pytest -q backend/tests/test_languages.py`; expect failures.
+- [x] Implement migration, language policy and metadata propagation. Keep older
   results valid with nullable defaults; translated output retains original sources.
-- [ ] Pass existing question summaries to generation. Reject exact normalized
+- [x] Pass existing question summaries to generation. Reject exact normalized
   question/answer/language duplicates against DB and within result, transactionally,
   reporting skipped duplicates in warnings. Scope summaries and refs to topic.
-- [ ] Test defaults, explicit translation, mixed source language, duplicate requests
+- [x] Test defaults, explicit translation, mixed source language, duplicate requests
   and untouched snapshots. Run backend suite and Ruff; expect success. Commit.
 
 ### Task 2: Original YouTube subtitle selection
@@ -73,13 +73,13 @@ POST `/api/topics/{id}/youtube` accepts optional language; missing language uses
 unambiguous track resolution or asks for choice. Response includes `duplicate`.
 Function `list_tracks(video)` uses the existing bounded TranscriptSession.
 
-- [ ] Write tests for one track, unique generated source language, ambiguous
+- [x] Write tests for one track, unique generated source language, ambiguous
   manual tracks, missing captions, and auto/explicit duplicate convergence.
-- [ ] Run targeted tests; expect failures before implementation.
-- [ ] Implement resolution without calling translate or defaulting to Russian.
+- [x] Run targeted tests; expect failures before implementation.
+- [x] Implement resolution without calling translate or defaulting to Russian.
   Prefer manual track matching the sole generated language; if original cannot
   be inferred, return no selected language. Explicit existing imports remain valid.
-- [ ] Test timeouts/blocked service are useful errors, normalization/security/cache
+- [x] Test timeouts/blocked service are useful errors, normalization/security/cache
   behavior unchanged. Run YouTube suite and Ruff; expect success. Commit.
 
 ### Task 3: Prepare legacy questions for tests
@@ -95,13 +95,13 @@ prepare jobs are private to their creator. Queue worker atomically adds options
 to unchanged legacy cards; no new question IDs. Existing quiz-only topics start
 without preparation; flashcards always hide quiz options.
 
-- [ ] Write tests for mixed legacy/saved/draft questions, repeated start reusing
+- [x] Write tests for mixed legacy/saved/draft questions, repeated start reusing
   one job, successful prep then full-topic quiz, version conflict, failure/retry,
   private job access, restart recovery and unchanged old history.
-- [ ] Run preparation tests; expect failures.
-- [ ] Implement BEGIN IMMEDIATE claim/dedup, strict result checks and all-or-none
+- [x] Run preparation tests; expect failures.
+- [x] Implement BEGIN IMMEDIATE claim/dedup, strict result checks and all-or-none
   versioned writes; no network while holding DB transaction. Route queue execution.
-- [ ] Test original answer appears as the single correct option; preserved text
+- [x] Test original answer appears as the single correct option; preserved text
   and references, flash/quiz snapshots and retry semantics. Run backend suite,
   Ruff and Bandit; expect success. Commit.
 
@@ -119,15 +119,15 @@ modify `frontend/tests/app.test.tsx`.
 StartStudy receives topic_ids and renders two actions, resumes pending prep,
 polls job then starts study. Creation always requests quiz bank questions.
 
-- [ ] Add regression tests for hierarchical home, two immediate study actions,
+- [x] Add regression tests for hierarchical home, two immediate study actions,
   separate question details/materials, creation without format choice, scoped
   draft review, auto subtitle choice and preparation progress/errors.
-- [ ] Run tests; expect failures with old pages.
-- [ ] Split topic management out of Library; topic overview shows study actions
+- [x] Run tests; expect failures with old pages.
+- [x] Split topic management out of Library; topic overview shows study actions
   and navigation only. Separate create/status/review pages and persist direct links.
-- [ ] Add original subtitle resolver/chooser, duplicate notice, retained sources,
+- [x] Add original subtitle resolver/chooser, duplicate notice, retained sources,
   new-material selection and translation opt-in to separate materials/create pages.
-- [ ] Update tests whose old mixed-screen expectations intentionally changed.
+- [x] Update tests whose old mixed-screen expectations intentionally changed.
   Run Vitest, ESLint and production build; expect success. Commit.
 
 ### Task 5: Polish, English and Russian interface
@@ -140,26 +140,26 @@ HTML language/title and locale-sensitive history timestamps.
 LanguageSwitcher. Locale codes pl/en/ru; default pl, store only UI preference
 in localStorage. Dictionary values include interface-owned states/errors.
 
-- [ ] Write tests for Polish default, switch/persistence, English and Russian
+- [x] Write tests for Polish default, switch/persistence, English and Russian
   screens, HTML lang and study content unchanged after UI switch.
-- [ ] Run locale tests; expect failures.
-- [ ] Implement explicit translated strings, interpolated counts/names and
+- [x] Run locale tests; expect failures.
+- [x] Implement explicit translated strings, interpolated counts/names and
   persistent switcher available before and after login. Localize built-in server
   errors/warnings/status messages without translating supplied academic text.
-- [ ] Set old Russian UI tests to explicit ru preference; check complete dictionary
+- [x] Set old Russian UI tests to explicit ru preference; check complete dictionary
   coverage. Run frontend checks; expect success. Commit.
 
 ### Task 6: Full verification, review and existing Docker update
 
 **Files:** Update `README.md`, this plan and execution ledger.
 
-- [ ] Run `sh scripts/check.sh`; expect all tests, Ruff, ESLint, Bandit and build pass.
-- [ ] Build disposable QA Docker and exercise both modes, materials, generation
+- [x] Run `sh scripts/check.sh`; expect all tests, Ruff, ESLint, Bandit and build pass.
+- [x] Build disposable QA Docker and exercise both modes, materials, generation
   review, locale persistence and old URL navigation on 360/390/1280 screens.
-- [ ] Run small real typed-model language probes with existing API configuration,
+- [x] Run small real typed-model language probes with existing API configuration,
   preserve store=False and never print secrets or alter real study data.
-- [ ] Dispatch one fresh read-only whole-change reviewer under executing-plans;
+- [x] Dispatch one fresh read-only whole-change reviewer under executing-plans;
   address important findings with failing regression then fix and green suite.
-- [ ] Back up existing Docker data; rebuild main app with same volume/settings;
+- [x] Back up existing Docker data; rebuild main app with same volume/settings;
   verify health, migration, previous row IDs and original file hashes preserved.
-- [ ] Commit final docs and report outcome plus any actual limitations.
+- [x] Commit final docs and report outcome plus any actual limitations.
