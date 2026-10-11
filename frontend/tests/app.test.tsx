@@ -702,6 +702,7 @@ test("library home shows subjects before their topics", async () => {
     ],
   })
   render(<App />)
+  await screen.findByRole("heading", { name: /что изучим сегодня/ })
   expect(
     await within(screen.getByRole("main")).findByRole("link", {
       name: "История",
