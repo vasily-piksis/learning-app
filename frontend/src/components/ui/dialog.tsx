@@ -1,4 +1,5 @@
 import * as React from "react"
+import { t } from "@/i18n"
 import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
@@ -73,7 +74,7 @@ function DialogContent({
               size="icon-sm"
             >
               <XIcon />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{t("Закрыть")}</span>
             </Button>
           </DialogPrimitive.Close>
         )}

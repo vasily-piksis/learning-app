@@ -1,3 +1,5 @@
+import { t, useLocale } from "@/i18n"
+import LanguageSwitcher from "@/components/LanguageSwitcher"
 import { useEffect, useState } from "react"
 import {
   BookOpen,
@@ -31,6 +33,11 @@ function useRoute() {
   return hash
 }
 export default function App() {
+  const locale = useLocale()
+  useEffect(() => {
+    document.documentElement.lang = locale
+    document.title = t("Семейная библиотека")
+  }, [locale])
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState<string | null>(null),
@@ -105,19 +112,20 @@ export default function App() {
           document.getElementById("main")?.focus()
         }}
       >
-        К содержимому
+        {t("К содержимому")}
       </a>
       <header className="app-header">
         <a className="brand" href="#library">
           <span className="brand-mark">
             <BookOpen />
           </span>
-          учиться<span className="brand-dot">.</span>
+          {t("учиться")}
+          <span className="brand-dot">.</span>
         </a>
-        <nav className="main-nav" aria-label="Основная навигация">
+        <nav className="main-nav" aria-label={t("Основная навигация")}>
           {[
-            { key: "library", label: "Библиотека", icon: LibraryBig },
-            { key: "history", label: "История", icon: HistoryIcon },
+            { key: "library", label: t("Библиотека"), icon: LibraryBig },
+            { key: "history", label: t("История"), icon: HistoryIcon },
           ].map((item) => (
             <a
               key={item.key}
@@ -131,6 +139,7 @@ export default function App() {
           ))}
         </nav>
         <div className="account">
+          <LanguageSwitcher />
           <span className="account-avatar" aria-hidden="true">
             {user.display_name[0]}
           </span>
@@ -138,7 +147,7 @@ export default function App() {
           <Button
             size="icon"
             variant="ghost"
-            aria-label="Выйти"
+            aria-label={t("Выйти")}
             onClick={async () => {
               try {
                 await api("/auth/logout", "POST")
@@ -200,9 +209,10 @@ export default function App() {
       </main>
       <footer className="app-footer">
         <span>
-          <Heart className="size-3.5" /> Учимся в своём темпе
+          <Heart className="size-3.5" />
+          {t("Учимся в своём темпе")}
         </span>
-        <span>Семейная библиотека</span>
+        <span>{t("Семейная библиотека")}</span>
       </footer>
       <Toaster position="top-center" richColors />
     </div>

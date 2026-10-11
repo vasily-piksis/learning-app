@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -75,9 +76,11 @@ export default function Generation({
     return (
       <div className="flex flex-col gap-4">
         <PageHeading
-          eyebrow="Вопросы"
-          title="Выбери тему"
-          description="Создание вопросов открывается внутри конкретной темы."
+          eyebrow={t("Вопросы")}
+          title={t("Выбери тему")}
+          description={t(
+            "Создание вопросов открывается внутри конкретной темы."
+          )}
         />
         {topics.loading ? (
           <Loading />
@@ -89,14 +92,14 @@ export default function Generation({
           ))
         )}
         <Button asChild variant="ghost">
-          <a href="#library">В библиотеку</a>
+          <a href="#library">{t("В библиотеку")}</a>
         </Button>
       </div>
     )
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Создать вопросы</CardTitle>
+        <CardTitle>{t("Создать вопросы")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
         <ErrorNotice
@@ -108,10 +111,11 @@ export default function Generation({
         ) : available.length ? (
           <FieldGroup>
             <Field>
-              <FieldLabel>Материалы для вопросов</FieldLabel>
+              <FieldLabel>{t("Материалы для вопросов")}</FieldLabel>
               <FieldDescription>
-                Сначала выбраны новые материалы. Можно выбрать другие или
-                использовать все готовые.
+                {t(
+                  "Сначала выбраны новые материалы. Можно выбрать другие или использовать все готовые."
+                )}
               </FieldDescription>
               {available.map((document) => (
                 <label key={document.id} className="flex items-start gap-3">
@@ -130,7 +134,7 @@ export default function Generation({
                     {document.name}
                     {!document.used_for_questions && (
                       <small className="block text-muted-foreground">
-                        Новый материал
+                        {t("Новый материал")}
                       </small>
                     )}
                   </span>
@@ -143,11 +147,11 @@ export default function Generation({
                   setSelected(available.map((document) => document.id))
                 }
               >
-                Выбрать все готовые
+                {t("Выбрать все готовые")}
               </Button>
             </Field>
             <Field>
-              <FieldLabel htmlFor="count">Сколько вопросов?</FieldLabel>
+              <FieldLabel htmlFor="count">{t("Сколько вопросов?")}</FieldLabel>
               <Input
                 id="count"
                 type="number"
@@ -158,7 +162,7 @@ export default function Generation({
                 onChange={(event) => setCount(Number(event.target.value))}
               />
               <FieldDescription>
-                От 1 до 30. Каждый вопрос подходит для флеш-карт и теста.
+                {t("От 1 до 30. Каждый вопрос подходит для флеш-карт и теста.")}
               </FieldDescription>
             </Field>
             <Field orientation="horizontal">
@@ -169,12 +173,14 @@ export default function Generation({
                 onCheckedChange={(value) => setTranslate(value === true)}
               />
               <FieldLabel htmlFor="translate">
-                Перевести вопросы на другой язык
+                {t("Перевести вопросы на другой язык")}
               </FieldLabel>
             </Field>
             {translate ? (
               <Field>
-                <FieldLabel htmlFor="target-language">Язык перевода</FieldLabel>
+                <FieldLabel htmlFor="target-language">
+                  {t("Язык перевода")}
+                </FieldLabel>
                 <Input
                   id="target-language"
                   value={language}
@@ -183,22 +189,26 @@ export default function Generation({
                   maxLength={20}
                 />
                 <FieldDescription>
-                  pl — польский, en — английский, ru — русский, lt — литовский.
+                  {t(
+                    "pl — польский, en — английский, ru — русский, lt — литовский."
+                  )}
                 </FieldDescription>
               </Field>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Вопросы будут на языке исходных материалов.
+                {t("Вопросы будут на языке исходных материалов.")}
               </p>
             )}
           </FieldGroup>
         ) : (
           <Blank
-            title="Нужны готовые материалы"
-            description="Добавь материал или дождись обработки."
+            title={t("Нужны готовые материалы")}
+            description={t("Добавь материал или дождись обработки.")}
             action={
               <Button asChild>
-                <a href={`#library/topic/${id}/materials`}>К материалам</a>
+                <a href={`#library/topic/${id}/materials`}>
+                  {t("К материалам")}
+                </a>
               </Button>
             }
           />
@@ -216,7 +226,8 @@ export default function Generation({
           }
           onClick={() => void generate()}
         >
-          {busy && <PendingIcon />}Создать вопросы
+          {busy && <PendingIcon />}
+          {t("Создать вопросы")}
         </Button>
       </CardFooter>
     </Card>
@@ -231,16 +242,18 @@ export function GenerationResult({ id }: { id: number }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeading
-        eyebrow="Вопросы"
+        eyebrow={t("Вопросы")}
         title={
           job.data?.status === "succeeded"
-            ? "Проверь новые вопросы"
-            : "Создаём вопросы"
+            ? t("Проверь новые вопросы")
+            : t("Создаём вопросы")
         }
-        description="Результат сохраняется после закрытия страницы."
+        description={t("Результат сохраняется после закрытия страницы.")}
       />
       <Button variant="ghost" asChild>
-        <a href={topicId ? `#library/topic/${topicId}` : "#library"}>К теме</a>
+        <a href={topicId ? `#library/topic/${topicId}` : "#library"}>
+          {t("К теме")}
+        </a>
       </Button>
       <ErrorNotice message={job.error || error} retry={job.refetch} />
       {job.loading ? (

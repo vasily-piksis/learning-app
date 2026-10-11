@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { ArrowLeft, FileText, ListChecks, Pencil, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,21 +38,21 @@ export default function Topic({
   if (!topic)
     return (
       <Blank
-        title="Тема не найдена"
-        description="Выбери тему в библиотеке."
+        title={t("Тема не найдена")}
+        description={t("Выбери тему в библиотеке.")}
         action={
           <Button asChild>
-            <a href="#library">В библиотеку</a>
+            <a href="#library">{t("В библиотеку")}</a>
           </Button>
         }
       />
     )
   const root = `#library/topic/${id}`
   const labels: Record<string, string> = {
-    materials: "Материалы",
-    questions: "Вопросы",
-    question: "Вопрос",
-    create: "Создать вопросы",
+    materials: t("Материалы"),
+    questions: t("Вопросы"),
+    question: t("Вопрос"),
+    create: t("Создать вопросы"),
   }
   return (
     <div className="flex flex-col gap-6">
@@ -59,17 +60,17 @@ export default function Topic({
         <Button asChild variant="ghost">
           <a href={section ? root : `#library/subject/${topic.subject_id}`}>
             <ArrowLeft data-icon="inline-start" />
-            {section ? "К теме" : "К темам"}
+            {section ? t("К теме") : t("К темам")}
           </a>
         </Button>
         {!section && (
           <NameDialog
-            title="Название темы"
+            title={t("Название темы")}
             initial={topic.name}
             trigger={
               <Button variant="ghost">
                 <Pencil data-icon="inline-start" />
-                Переименовать
+                {t("Переименовать")}
               </Button>
             }
             onSave={async (name) => {
@@ -80,9 +81,11 @@ export default function Topic({
         )}
       </div>
       <PageHeading
-        eyebrow={section ? topic.name : "Тема"}
+        eyebrow={section ? topic.name : t("Тема")}
         title={section ? labels[section] || topic.name : topic.name}
-        description={section ? "" : "Выбери, как проверить себя по этой теме."}
+        description={
+          section ? "" : t("Выбери, как проверить себя по этой теме.")
+        }
       />
       {section === "materials" ? (
         <Materials topic={topic} refresh={topics.refetch} />
@@ -93,13 +96,15 @@ export default function Topic({
       ) : (
         <>
           <p className="text-muted-foreground">
-            Готовых вопросов: {topic.card_count}
+            {t("Готовых вопросов: {count}", { count: topic.card_count })}
           </p>
           <StartStudy topicIds={[id]} disabled={!topic.card_count} />
           {!topic.card_count && (
             <Blank
-              title="Пока нет готовых вопросов"
-              description="Добавь материалы и создай вопросы. После проверки они станут доступны для обоих способов повторения."
+              title={t("Пока нет готовых вопросов")}
+              description={t(
+                "Добавь материалы и создай вопросы. После проверки они станут доступны для обоих способов повторения."
+              )}
               action={
                 <Button asChild>
                   <a
@@ -107,8 +112,8 @@ export default function Topic({
                   >
                     <Plus data-icon="inline-start" />
                     {topic.document_count
-                      ? "Создать вопросы"
-                      : "Добавить материалы"}
+                      ? t("Создать вопросы")
+                      : t("Добавить материалы")}
                   </a>
                 </Button>
               }
@@ -123,11 +128,11 @@ export default function Topic({
                     href={`${root}/questions`}
                   >
                     <ListChecks className="size-5" />
-                    Вопросы
+                    {t("Вопросы")}
                   </a>
                 </CardTitle>
                 <CardDescription>
-                  Посмотреть и изменить вопросы темы.
+                  {t("Посмотреть и изменить вопросы темы.")}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -139,11 +144,11 @@ export default function Topic({
                     href={`${root}/materials`}
                   >
                     <FileText className="size-5" />
-                    Материалы
+                    {t("Материалы")}
                   </a>
                 </CardTitle>
                 <CardDescription>
-                  Учебники, фотографии и видео. Можно дополнить позже.
+                  {t("Учебники, фотографии и видео. Можно дополнить позже.")}
                 </CardDescription>
               </CardHeader>
             </Card>

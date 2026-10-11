@@ -1,3 +1,5 @@
+import { t } from "@/i18n"
+import LanguageSwitcher from "@/components/LanguageSwitcher"
 import { useState } from "react"
 import { BookOpen, LockKeyhole, ArrowRight } from "lucide-react"
 import {
@@ -22,30 +24,36 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
   return (
     <main className="login-page">
       <div className="login-intro">
+        <LanguageSwitcher />
         <a href="#" className="brand">
           <span className="brand-mark">
             <BookOpen />
           </span>
-          учиться<span className="brand-dot">.</span>
+          {t("учиться")}
+          <span className="brand-dot">.</span>
         </a>
-        <p className="eyebrow">Маленькие шаги. Большие открытия.</p>
+        <p className="eyebrow">{t("Маленькие шаги. Большие открытия.")}</p>
         <h1>
-          Знания остаются.
+          {t("Знания остаются.")}
           <br />
-          <span>Сложное становится понятным.</span>
+          <span>{t("Сложное становится понятным.")}</span>
         </h1>
         <p className="lead">
-          Свои учебники, свои темы и карточки, к которым всегда можно вернуться.
+          {t(
+            "Свои учебники, свои темы и карточки, к которым всегда можно вернуться."
+          )}
         </p>
         <div className="login-caption">
-          <LockKeyhole className="size-4" /> Семейная библиотека · личный
-          прогресс
+          <LockKeyhole className="size-4" />
+          {t("Семейная библиотека · личный прогресс")}
         </div>
       </div>
       <Card className="login-card">
         <CardHeader>
-          <CardTitle className="text-2xl">Рады тебя видеть</CardTitle>
-          <CardDescription>Войди, чтобы продолжить учиться.</CardDescription>
+          <CardTitle className="text-2xl">{t("Рады тебя видеть")}</CardTitle>
+          <CardDescription>
+            {t("Войди, чтобы продолжить учиться.")}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -67,7 +75,7 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
           >
             <FieldGroup>
               <Field data-invalid={!!error}>
-                <FieldLabel htmlFor="username">Логин</FieldLabel>
+                <FieldLabel htmlFor="username">{t("Логин")}</FieldLabel>
                 <Input
                   id="username"
                   autoComplete="username"
@@ -75,11 +83,11 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   aria-invalid={!!error}
-                  placeholder="Твой логин"
+                  placeholder={t("Твой логин")}
                 />
               </Field>
               <Field data-invalid={!!error}>
-                <FieldLabel htmlFor="password">Пароль</FieldLabel>
+                <FieldLabel htmlFor="password">{t("Пароль")}</FieldLabel>
                 <Input
                   id="password"
                   type="password"
@@ -88,17 +96,17 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   aria-invalid={!!error}
-                  placeholder="Твой пароль"
+                  placeholder={t("Твой пароль")}
                 />
               </Field>
             </FieldGroup>
             <ErrorNotice message={error} />
             <Button disabled={busy} size="lg">
               {busy ? <PendingIcon /> : <ArrowRight data-icon="inline-end" />}
-              Войти
+              {t("Войти")}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              Аккаунты создаёт владелец семейной библиотеки.
+              {t("Аккаунты создаёт владелец семейной библиотеки.")}
             </p>
           </form>
         </CardContent>

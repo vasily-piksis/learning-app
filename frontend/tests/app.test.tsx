@@ -1,7 +1,11 @@
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { expect, test, vi } from "vitest"
+import { beforeEach, expect, test, vi } from "vitest"
 import App from "../src/App"
+
+beforeEach(() => {
+  localStorage.setItem("learning-ui-language", "ru")
+})
 
 const user = {
   id: 1,

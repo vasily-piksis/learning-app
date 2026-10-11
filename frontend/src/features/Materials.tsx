@@ -1,3 +1,4 @@
+import { t, systemMessage } from "@/i18n"
 import { useState } from "react"
 import { Plus, Upload, FileText, Video } from "lucide-react"
 import { toast } from "sonner"
@@ -35,7 +36,7 @@ export default function Materials({
       body.append("file", file)
       try {
         await api(`/topics/${topic.id}/documents`, "POST", body)
-        toast.success(`${file.name} сохранён`)
+        toast.success(t("{name} сохранён", { name: file.name }))
       } catch (e) {
         failed.push(file)
         setError(errorText(e))
@@ -50,14 +51,16 @@ export default function Materials({
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Добавить материалы</CardTitle>
+          <CardTitle>{t("Добавить материалы")}</CardTitle>
           <CardDescription>
-            Учебник, конспект или фотографии страниц.
+            {t("Учебник, конспект или фотографии страниц.")}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <Field>
-            <FieldLabel htmlFor="files">Выбрать PDF или фотографии</FieldLabel>
+            <FieldLabel htmlFor="files">
+              {t("Выбрать PDF или фотографии")}
+            </FieldLabel>
             <Input
               id="files"
               type="file"
@@ -67,7 +70,7 @@ export default function Materials({
               onChange={(e) => setFiles(Array.from(e.target.files || []))}
             />
             <FieldDescription>
-              PDF, JPEG, PNG, WebP · до 20 МБ · до 50 страниц в PDF
+              {t("PDF, JPEG, PNG, WebP · до 20 МБ · до 50 страниц в PDF")}
             </FieldDescription>
           </Field>
           {files.length > 0 && (
@@ -81,7 +84,7 @@ export default function Materials({
                 className="self-start"
               >
                 {busy ? <PendingIcon /> : <Upload data-icon="inline-start" />}
-                Загрузить {files.length} файлов
+                {t("Загрузить {count} файлов", { count: files.length })}
               </Button>
             </>
           )}
@@ -97,10 +100,12 @@ export default function Materials({
       />
       <div className="section-toolbar">
         <h2>
-          Материалы{" "}
+          {t("Материалы")}{" "}
           <span className="muted-count">{documents.data?.length || 0}</span>
         </h2>
-        <Badge variant="outline">Версия {topic.version}</Badge>
+        <Badge variant="outline">
+          {t("Версия {version}", { version: topic.version })}
+        </Badge>
       </div>
       <ErrorNotice message={documents.error} retry={documents.refetch} />
       {documents.loading ? (
@@ -125,25 +130,32 @@ export default function Materials({
                 </a>
                 <p>
                   {document.source_url
-                    ? `Субтитры: ${document.language} · ${document.page_count} фрагментов`
-                    : `${document.page_count} стр.`}{" "}
-                  · {(document.size / 1024 / 1024).toFixed(1)} МБ
+                    ? t("Субтитры: {language} · {count} фрагментов", {
+                        language: document.language || "?",
+                        count: document.page_count,
+                      })
+                    : t("{count} стр.", { count: document.page_count })}{" "}
+                  · {(document.size / 1024 / 1024).toFixed(1)}
+                  {t("МБ")}
                 </p>
                 {document.source_url && document.status === "ready" && (
                   <a
                     className="text-sm"
                     href={`/api/documents/${document.id}/download`}
                   >
-                    Скачать сохранённые субтитры
+                    {t("Скачать сохранённые субтитры")}
                   </a>
                 )}
                 {document.error && (
-                  <p className="text-destructive">{document.error}</p>
+                  <p className="text-destructive">
+                    {systemMessage(document.error)}
+                  </p>
                 )}
                 {document.warnings?.map((warning) => (
                   <p key={warning.page} className="text-muted-foreground">
-                    {document.source_url ? "Фрагмент" : "Стр."} {warning.page}:{" "}
-                    {warning.messages.join("; ")}
+                    {document.source_url ? t("Фрагмент") : t("Стр.")}{" "}
+                    {warning.page}:{" "}
+                    {warning.messages.map(systemMessage).join("; ")}
                   </p>
                 ))}
               </div>
@@ -160,12 +172,12 @@ export default function Materials({
                   {
                     (
                       {
-                        ready: "Готово",
-                        queued: "В очереди",
+                        ready: t("Готово"),
+                        queued: t("В очереди"),
                         processing: document.source_url
-                          ? "Получаем субтитры"
-                          : "Распознаём",
-                        failed: "Ошибка",
+                          ? t("Получаем субтитры")
+                          : t("Распознаём"),
+                        failed: t("Ошибка"),
                       } as Record<string, string>
                     )[document.status]
                   }
@@ -182,7 +194,7 @@ export default function Materials({
                       }
                     }}
                   >
-                    Повторить
+                    {t("Повторить")}
                   </Button>
                 )}
               </div>
@@ -191,8 +203,10 @@ export default function Materials({
         </div>
       ) : (
         <Blank
-          title="Добавь страницы учебника"
-          description="Материалы останутся в этой теме. Новые файлы можно добавлять позже."
+          title={t("Добавь страницы учебника")}
+          description={t(
+            "Материалы останутся в этой теме. Новые файлы можно добавлять позже."
+          )}
         />
       )}
     </div>
@@ -238,8 +252,8 @@ function YouTubeImport({
       })
       toast.success(
         result.duplicate
-          ? "Это видео уже сохранено в теме"
-          : "Видео добавлено. Получаем субтитры"
+          ? t("Это видео уже сохранено в теме")
+          : t("Видео добавлено. Получаем субтитры")
       )
       setUrl("")
       setTracks([])
@@ -257,11 +271,12 @@ function YouTubeImport({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Video className="size-5" />
-          Урок из YouTube
+          {t("Урок из YouTube")}
         </CardTitle>
         <CardDescription>
-          Сохраним исходные субтитры без перевода. Вопросы будут ссылаться на
-          нужный момент.
+          {t(
+            "Сохраним исходные субтитры без перевода. Вопросы будут ссылаться на нужный момент."
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -270,7 +285,7 @@ function YouTubeImport({
           onSubmit={(event) => void submit(event)}
         >
           <Field>
-            <FieldLabel htmlFor="youtube-url">Ссылка YouTube</FieldLabel>
+            <FieldLabel htmlFor="youtube-url">{t("Ссылка YouTube")}</FieldLabel>
             <Input
               id="youtube-url"
               type="url"
@@ -290,7 +305,7 @@ function YouTubeImport({
           {tracks.length > 0 && (
             <Field>
               <FieldLabel htmlFor="youtube-language">
-                Язык исходных субтитров
+                {t("Язык исходных субтитров")}
               </FieldLabel>
               <select
                 id="youtube-language"
@@ -300,7 +315,7 @@ function YouTubeImport({
                 disabled={busy}
                 required
               >
-                <option value="">Выбери дорожку</option>
+                <option value="">{t("Выбери дорожку")}</option>
                 {tracks.map((track, index) => (
                   <option key={index} value={track.language}>
                     {track.name} ({track.language})
@@ -309,8 +324,9 @@ function YouTubeImport({
                 ))}
               </select>
               <FieldDescription>
-                Не удалось однозначно определить исходный язык. Выбери
-                подходящую дорожку.
+                {t(
+                  "Не удалось однозначно определить исходный язык. Выбери подходящую дорожку."
+                )}
               </FieldDescription>
             </Field>
           )}
@@ -319,8 +335,8 @@ function YouTubeImport({
             className="self-start"
             disabled={busy || !url.trim() || (tracks.length > 0 && !language)}
           >
-            {busy ? <PendingIcon /> : <Plus data-icon="inline-start" />}Добавить
-            YouTube
+            {busy ? <PendingIcon /> : <Plus data-icon="inline-start" />}
+            {t("Добавить YouTube")}
           </Button>
         </form>
       </CardContent>

@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { useState } from "react"
 import { Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -34,15 +35,16 @@ export default function StudySelection({
       <DialogTrigger asChild>
         <Button variant="outline" disabled={!available.length}>
           <Play data-icon="inline-start" />
-          Выбрать темы для повторения
+          {t("Выбрать темы для повторения")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Что повторим?</DialogTitle>
+          <DialogTitle>{t("Что повторим?")}</DialogTitle>
           <DialogDescription>
-            Выбери одну или несколько тем. Флеш-карты используют все сохранённые
-            вопросы. Тест использует те же вопросы.
+            {t(
+              "Выбери одну или несколько тем. Флеш-карты используют все сохранённые вопросы. Тест использует те же вопросы."
+            )}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
@@ -77,7 +79,7 @@ export default function StudySelection({
           <div
             className="flex flex-wrap gap-2"
             role="group"
-            aria-label="Формат занятия"
+            aria-label={t("Формат занятия")}
           >
             {(["flashcard", "quiz"] as const).map((value) => (
               <Button
@@ -90,7 +92,7 @@ export default function StudySelection({
                   setError(null)
                 }}
               >
-                {value === "quiz" ? "Тест" : "Флеш-карты"}
+                {value === "quiz" ? t("Тест") : t("Флеш-карты")}
               </Button>
             ))}
           </div>
@@ -121,7 +123,8 @@ export default function StudySelection({
               }
             }}
           >
-            {busy && <PendingIcon />}Начать занятие
+            {busy && <PendingIcon />}
+            {t("Начать занятие")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { useEffect, useRef, useState } from "react"
 import { Layers, ListChecks } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -53,7 +54,7 @@ export default function StartStudy({
           ) : (
             <Layers data-icon="inline-start" />
           )}
-          Флеш-карты
+          {t("Флеш-карты")}
         </Button>
         <Button
           size="lg"
@@ -66,7 +67,7 @@ export default function StartStudy({
           ) : (
             <ListChecks data-icon="inline-start" />
           )}
-          Тест
+          {t("Тест")}
         </Button>
       </div>
       <ErrorNotice message={error} />
@@ -109,12 +110,14 @@ export function Preparation({ id }: { id: number }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeading
-        eyebrow="Тест"
-        title="Готовим варианты ответа"
-        description="Существующие вопросы сохранятся. Варианты готовятся один раз; затем тест запустится."
+        eyebrow={t("Тест")}
+        title={t("Готовим варианты ответа")}
+        description={t(
+          "Существующие вопросы сохранятся. Варианты готовятся один раз; затем тест запустится."
+        )}
       />
       <Button asChild variant="ghost">
-        <a href={back}>К теме</a>
+        <a href={back}>{t("К теме")}</a>
       </Button>
       <ErrorNotice message={job.error || error} retry={job.refetch} />
       {job.loading ? (

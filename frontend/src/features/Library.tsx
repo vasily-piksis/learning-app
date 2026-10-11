@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { BookOpen, Plus, ArrowLeft, Pencil, FolderOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,10 +37,15 @@ export default function Library({
   return (
     <div className="flex flex-col gap-6">
       <PageHeading
-        eyebrow="Семейная библиотека"
-        title={selected?.name || `${displayName}, что изучим сегодня?`}
+        eyebrow={t("Семейная библиотека")}
+        title={
+          selected?.name ||
+          t("{name}, что изучим сегодня?", { name: displayName })
+        }
         description={
-          selected ? "Выбери тему для занятия." : "Выбери предмет, затем тему."
+          selected
+            ? t("Выбери тему для занятия.")
+            : t("Выбери предмет, затем тему.")
         }
       />
       <ErrorNotice message={subjects.error || topics.error} retry={refresh} />
@@ -47,7 +53,8 @@ export default function Library({
         {subjectId && (
           <Button asChild variant="ghost">
             <a href="#library">
-              <ArrowLeft data-icon="inline-start" />К предметам
+              <ArrowLeft data-icon="inline-start" />
+              {t("К предметам")}
             </a>
           </Button>
         )}
@@ -59,10 +66,10 @@ export default function Library({
               subjects={subjects.data || []}
             />
             <NameDialog
-              title="Название предмета"
+              title={t("Название предмета")}
               initial={selected.name}
               trigger={
-                <Button variant="ghost" aria-label="Переименовать предмет">
+                <Button variant="ghost" aria-label={t("Переименовать предмет")}>
                   <Pencil />
                 </Button>
               }
@@ -72,11 +79,11 @@ export default function Library({
               }}
             />
             <NameDialog
-              title="Новая тема"
+              title={t("Новая тема")}
               trigger={
                 <Button>
                   <Plus data-icon="inline-start" />
-                  Добавить тему
+                  {t("Добавить тему")}
                 </Button>
               }
               onSave={async (name) => {
@@ -91,11 +98,11 @@ export default function Library({
           </div>
         ) : (
           <NameDialog
-            title="Новый предмет"
+            title={t("Новый предмет")}
             trigger={
               <Button>
                 <Plus data-icon="inline-start" />
-                Добавить предмет
+                {t("Добавить предмет")}
               </Button>
             }
             onSave={async (name) => {
@@ -110,8 +117,8 @@ export default function Library({
         <Loading />
       ) : subjectId && !selected ? (
         <Blank
-          title="Предмет не найден"
-          description="Выбери предмет в библиотеке."
+          title={t("Предмет не найден")}
+          description={t("Выбери предмет в библиотеке.")}
         />
       ) : selected ? (
         visible.length ? (
@@ -126,8 +133,10 @@ export default function Library({
                     <a href={`#library/topic/${topic.id}`}>{topic.name}</a>
                   </CardTitle>
                   <CardDescription>
-                    {topic.card_count} вопросов · {topic.document_count}{" "}
-                    материалов
+                    {t("{count} вопросов · {documents} материалов", {
+                      count: topic.card_count,
+                      documents: topic.document_count,
+                    })}
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -135,8 +144,8 @@ export default function Library({
           </div>
         ) : (
           <Blank
-            title="Добавь первую тему"
-            description="В каждой теме будут свои материалы и вопросы."
+            title={t("Добавь первую тему")}
+            description={t("В каждой теме будут свои материалы и вопросы.")}
           />
         )
       ) : subjects.data?.length ? (
@@ -150,15 +159,19 @@ export default function Library({
                 <CardTitle>
                   <a href={`#library/subject/${subject.id}`}>{subject.name}</a>
                 </CardTitle>
-                <CardDescription>Тем: {subject.topic_count}</CardDescription>
+                <CardDescription>
+                  {t("Тем: {count}", { count: subject.topic_count })}
+                </CardDescription>
               </CardHeader>
             </Card>
           ))}
         </div>
       ) : (
         <Blank
-          title="Добавь первый предмет"
-          description="Например, история или язык. Затем создай в нём темы."
+          title={t("Добавь первый предмет")}
+          description={t(
+            "Например, история или язык. Затем создай в нём темы."
+          )}
         />
       )}
       {selected && (

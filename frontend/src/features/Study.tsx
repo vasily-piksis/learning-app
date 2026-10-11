@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { useRef, useState } from "react"
 import {
   ArrowLeft,
@@ -45,7 +46,7 @@ export default function Study({ id }: { id: number }) {
     Number.isSafeInteger(id) && id > 0 ? `/study/${id}` : null
   )
   if (!Number.isSafeInteger(id) || id <= 0)
-    return <ErrorNotice message="Занятие не найдено" />
+    return <ErrorNotice message={t("Занятие не найдено")} />
   if (session.loading) return <Loading />
   if (session.error)
     return <ErrorNotice message={session.error} retry={session.refetch} />
@@ -56,16 +57,16 @@ export default function Study({ id }: { id: number }) {
       <Button asChild variant="ghost" className="self-start">
         <a href="#history">
           <ArrowLeft data-icon="inline-start" />
-          Мои занятия
+          {t("Мои занятия")}
         </a>
       </Button>
       <PageHeading
-        eyebrow="Немного практики каждый день"
+        eyebrow={t("Немного практики каждый день")}
         title={value.topic_names.join(" · ")}
         description={
           value.mode === "quiz"
-            ? "Не спеши. Выбери ответ, который кажется верным."
-            : "Попробуй вспомнить ответ, прежде чем открыть карточку."
+            ? t("Не спеши. Выбери ответ, который кажется верным.")
+            : t("Попробуй вспомнить ответ, прежде чем открыть карточку.")
         }
       />
       {value.card ? (
@@ -79,7 +80,7 @@ export default function Study({ id }: { id: number }) {
           <Completed session={value} />
           {value.review?.length ? (
             <section className="flex flex-col gap-4">
-              <h2>Ответы и объяснения</h2>
+              <h2>{t("Ответы и объяснения")}</h2>
               {value.review.map((item) => (
                 <ReviewCard
                   key={item.position}
@@ -148,22 +149,25 @@ function Question({
       <div className="study-progress">
         <div className="flex items-center justify-between gap-3">
           <span>
-            Карточка {session.position + 1} из {session.count}
+            {t("Карточка {position} из {count}", {
+              position: session.position + 1,
+              count: session.count,
+            })}
           </span>
           <Badge variant="secondary">
-            {session.mode === "quiz" ? "Тест" : "Флеш-карта"}
+            {session.mode === "quiz" ? t("Тест") : t("Флеш-карта")}
           </Badge>
         </div>
         <Progress
           value={
             ((session.answered + (feedback ? 1 : 0)) / session.count) * 100
           }
-          aria-label="Прогресс занятия"
+          aria-label={t("Прогресс занятия")}
         />
       </div>
       <Card className="question-card">
         <CardHeader>
-          <p className="eyebrow">Вспоминаем и понимаем</p>
+          <p className="eyebrow">{t("Вспоминаем и понимаем")}</p>
           <CardTitle className="question-title">{shown.question}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
@@ -198,13 +202,13 @@ function Question({
                     {correct && (
                       <>
                         <Check data-icon="inline-end" />
-                        <span className="sr-only">Правильный ответ</span>
+                        <span className="sr-only">{t("Правильный ответ")}</span>
                       </>
                     )}
                     {incorrect && (
                       <>
                         <X data-icon="inline-end" />
-                        <span className="sr-only">Неверный ответ</span>
+                        <span className="sr-only">{t("Неверный ответ")}</span>
                       </>
                     )}
                   </Button>
@@ -220,9 +224,9 @@ function Question({
               >
                 {feedback
                   ? feedback.correct
-                    ? "Верно!"
-                    : "Неверно. Правильный ответ:"
-                  : "Ответ"}
+                    ? t("Верно!")
+                    : t("Неверно. Правильный ответ:")
+                  : t("Ответ")}
               </p>
               <p className="answer-text">{shown.answer}</p>
               <Sources sources={shown.sources} />
@@ -234,8 +238,8 @@ function Question({
           {feedback ? (
             <Button className="ml-auto" onClick={onNext}>
               {session.position + 1 < session.count
-                ? "Следующая карточка"
-                : "Результат занятия"}
+                ? t("Следующая карточка")
+                : t("Результат занятия")}
               <ArrowRight data-icon="inline-end" />
             </Button>
           ) : session.mode === "quiz" ? (
@@ -244,7 +248,8 @@ function Question({
               disabled={busy || choice === null}
               onClick={() => void answer()}
             >
-              {busy && <PendingIcon />}Проверить ответ
+              {busy && <PendingIcon />}
+              {t("Проверить ответ")}
             </Button>
           ) : !card.revealed ? (
             <Button
@@ -268,11 +273,12 @@ function Question({
               }}
             >
               {busy ? <PendingIcon /> : <Eye data-icon="inline-start" />}
-              Показать ответ
+              {t("Показать ответ")}
             </Button>
           ) : answerLocked ? (
             <Button disabled={busy} onClick={() => void answer()}>
-              {busy && <PendingIcon />}Повторить сохранение ответа
+              {busy && <PendingIcon />}
+              {t("Повторить сохранение ответа")}
             </Button>
           ) : (
             <div className="grade-buttons">
@@ -282,11 +288,11 @@ function Question({
                 onClick={() => void answer(false)}
               >
                 <RotateCcw data-icon="inline-start" />
-                Повторить
+                {t("Повторить")}
               </Button>
               <Button disabled={busy} onClick={() => void answer(true)}>
                 <Check data-icon="inline-start" />
-                Помню
+                {t("Помню")}
               </Button>
             </div>
           )}
@@ -298,8 +304,9 @@ function Question({
         enabled={revealed}
       />
       <p className="study-note">
-        Ответы сохраняются после проверки. Можно продолжить позже с любого
-        устройства.
+        {t(
+          "Ответы сохраняются после проверки. Можно продолжить позже с любого устройства."
+        )}
       </p>
     </div>
   )
@@ -313,9 +320,9 @@ function Completed({ session }: { session: StudySession }) {
         <div className="completion-icon">
           <Trophy />
         </div>
-        <CardTitle className="text-3xl">Ещё один шаг вперёд</CardTitle>
+        <CardTitle className="text-3xl">{t("Ещё один шаг вперёд")}</CardTitle>
         <CardDescription>
-          Занятие завершено. Результат уже в твоей истории.
+          {t("Занятие завершено. Результат уже в твоей истории.")}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
@@ -326,8 +333,8 @@ function Completed({ session }: { session: StudySession }) {
           </strong>
           <p>
             {session.mode === "quiz"
-              ? "верных ответов"
-              : "карточек, которые помнишь"}
+              ? t("верных ответов")
+              : t("карточек, которые помнишь")}
           </p>
         </div>
         <ErrorNotice message={error} />
@@ -350,11 +357,11 @@ function Completed({ session }: { session: StudySession }) {
             }}
           >
             {busy ? <PendingIcon /> : <RotateCcw data-icon="inline-start" />}
-            Повторить сложные карточки
+            {t("Повторить сложные карточки")}
           </Button>
         )}
         <Button asChild variant="outline">
-          <a href="#library">Вернуться в библиотеку</a>
+          <a href="#library">{t("Вернуться в библиотеку")}</a>
         </Button>
       </CardContent>
     </Card>
@@ -380,14 +387,16 @@ function ReviewCard({
           variant={item.correct ? "secondary" : "outline"}
           className="self-start"
         >
-          {item.correct ? "Помнишь" : "Для повторения"}
+          {item.correct ? t("Помнишь") : t("Для повторения")}
         </Badge>
         <CardTitle>{item.card.question}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {item.choice !== null && (
           <p className="text-sm text-muted-foreground">
-            Твой ответ: {item.card.options[item.choice]}
+            {t("Твой ответ: {answer}", {
+              answer: item.card.options[item.choice],
+            })}
           </p>
         )}
         <p className="whitespace-pre-wrap">{item.card.answer}</p>
@@ -397,7 +406,7 @@ function ReviewCard({
           className="self-start"
           onClick={() => setOpen((v) => !v)}
         >
-          {open ? "Скрыть обсуждение" : "Объяснения и вопросы"}
+          {open ? t("Скрыть обсуждение") : t("Объяснения и вопросы")}
         </Button>
         {open && (
           <ExplanationPanel
@@ -465,12 +474,14 @@ function ExplanationPanel({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Sparkles className="size-5 text-primary" />
-          Разберёмся вместе
+          {t("Разберёмся вместе")}
         </CardTitle>
         <CardDescription>
           {enabled
-            ? "Попроси объяснить ответ простыми словами. Можно задать уточняющий вопрос."
-            : "Объяснение станет доступно после открытия ответа."}
+            ? t(
+                "Попроси объяснить ответ простыми словами. Можно задать уточняющий вопрос."
+              )
+            : t("Объяснение станет доступно после открытия ответа.")}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
@@ -504,14 +515,16 @@ function ExplanationPanel({
             variant="outline"
             className="self-start"
             disabled={!enabled || processing}
-            onClick={() => void explain("Объясни проще, как ребёнку пяти лет")}
+            onClick={() =>
+              void explain(t("Объясни проще, как ребёнку пяти лет"))
+            }
           >
             {processing ? (
               <PendingIcon />
             ) : (
               <Sparkles data-icon="inline-start" />
             )}
-            Объясни проще
+            {t("Объясни проще")}
           </Button>
         ) : (
           <form
@@ -522,14 +535,16 @@ function ExplanationPanel({
             }}
           >
             <Field>
-              <FieldLabel htmlFor="followup">Твой уточняющий вопрос</FieldLabel>
+              <FieldLabel htmlFor="followup">
+                {t("Твой уточняющий вопрос")}
+              </FieldLabel>
               <Textarea
                 id="followup"
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 maxLength={2000}
                 disabled={processing}
-                placeholder="Например: почему это произошло?"
+                placeholder={t("Например: почему это произошло?")}
               />
             </Field>
             <Button
@@ -537,7 +552,7 @@ function ExplanationPanel({
               disabled={processing || !question.trim() || !enabled}
             >
               {processing ? <PendingIcon /> : <Send data-icon="inline-start" />}
-              Спросить
+              {t("Спросить")}
             </Button>
           </form>
         )}

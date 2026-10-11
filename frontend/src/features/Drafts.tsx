@@ -1,3 +1,4 @@
+import { t, systemMessage } from "@/i18n"
 import { useState } from "react"
 import { Check } from "lucide-react"
 import { toast } from "sonner"
@@ -31,19 +32,19 @@ export default function Drafts({ job }: { job: Job }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="section-toolbar">
-        <h2>Проверим карточки</h2>
+        <h2>{t("Проверим карточки")}</h2>
         <Button
           variant="ghost"
           disabled={!drafts.length}
           onClick={() => setSelected(drafts.map((c) => c.id))}
         >
-          Выбрать все
+          {t("Выбрать все")}
         </Button>
       </div>
       {job.result?.warnings?.map((warning, i) => (
         <Alert key={i}>
-          <AlertTitle>Материалов оказалось меньше</AlertTitle>
-          <AlertDescription>{warning}</AlertDescription>
+          <AlertTitle>{t("Материалов оказалось меньше")}</AlertTitle>
+          <AlertDescription>{systemMessage(warning)}</AlertDescription>
         </Alert>
       ))}
       <ErrorNotice message={cards.error || error} retry={cards.refetch} />
@@ -56,7 +57,9 @@ export default function Drafts({ job }: { job: Job }) {
               <div className="flex items-start gap-3">
                 {card.status === "draft" ? (
                   <Checkbox
-                    aria-label={`Выбрать: ${card.question}`}
+                    aria-label={t("Выбрать: {question}", {
+                      question: card.question,
+                    })}
                     checked={selected.includes(card.id)}
                     onCheckedChange={(v) =>
                       setSelected((ids) =>
@@ -67,7 +70,7 @@ export default function Drafts({ job }: { job: Job }) {
                     }
                   />
                 ) : (
-                  <Badge variant="secondary">Сохранена</Badge>
+                  <Badge variant="secondary">{t("Сохранена")}</Badge>
                 )}
                 <CardTitle>{card.question}</CardTitle>
               </div>
@@ -95,8 +98,10 @@ export default function Drafts({ job }: { job: Job }) {
         ))
       ) : (
         <Blank
-          title="Карточки не созданы"
-          description="Попробуй добавить материалы или запросить меньше вопросов."
+          title={t("Карточки не созданы")}
+          description={t(
+            "Попробуй добавить материалы или запросить меньше вопросов."
+          )}
         />
       )}
       {drafts.length > 0 && (
@@ -106,7 +111,7 @@ export default function Drafts({ job }: { job: Job }) {
             setBusy(true)
             try {
               await api("/cards/save", "POST", { card_ids: selected })
-              toast.success("Карточки сохранены в темах")
+              toast.success(t("Карточки сохранены в темах"))
               setSelected([])
               cards.refetch()
             } catch (e) {
@@ -116,7 +121,8 @@ export default function Drafts({ job }: { job: Job }) {
             }
           }}
         >
-          {busy && <PendingIcon />}Сохранить выбранные ({selected.length})
+          {busy && <PendingIcon />}
+          {t("Сохранить выбранные ({count})", { count: selected.length })}
         </Button>
       )}
       {cards.data?.some((c) => c.status === "saved") && (
@@ -130,7 +136,7 @@ export default function Drafts({ job }: { job: Job }) {
             )
           }
         >
-          Перейти к занятиям
+          {t("Перейти к занятиям")}
         </Button>
       )}
     </div>

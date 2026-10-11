@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -39,7 +40,7 @@ export default function Questions({
     <div className="flex flex-col gap-4">
       <Button asChild variant="outline">
         <a href={cardId ? `${root}/questions` : `${root}/create`}>
-          {cardId ? "К вопросам" : "Создать вопросы"}
+          {cardId ? t("К вопросам") : t("Создать вопросы")}
         </a>
       </Button>
       <ErrorNotice message={cards.error} retry={cards.refetch} />
@@ -71,8 +72,8 @@ export default function Questions({
           </Card>
         ) : (
           <Blank
-            title="Вопрос не найден"
-            description="Вернись к списку вопросов темы."
+            title={t("Вопрос не найден")}
+            description={t("Вернись к списку вопросов темы.")}
           />
         )
       ) : cards.data?.length ? (
@@ -84,20 +85,22 @@ export default function Questions({
               </CardTitle>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline">
-                  {card.status === "saved" ? "Готов к занятиям" : "Черновик"}
+                  {card.status === "saved"
+                    ? t("Готов к занятиям")
+                    : t("Черновик")}
                 </Badge>
                 {card.language && (
                   <Badge variant="secondary">{card.language}</Badge>
                 )}
                 {card.target_language && (
-                  <Badge variant="outline">Перевод</Badge>
+                  <Badge variant="outline">{t("Перевод")}</Badge>
                 )}
                 {card.status === "draft" && card.job_id && (
                   <a
                     className="text-sm underline"
                     href={`#generation/${card.job_id}`}
                   >
-                    Проверить и сохранить
+                    {t("Проверить и сохранить")}
                   </a>
                 )}
               </div>
@@ -106,8 +109,8 @@ export default function Questions({
         ))
       ) : (
         <Blank
-          title="Пока нет вопросов"
-          description="Создай вопросы из материалов этой темы."
+          title={t("Пока нет вопросов")}
+          description={t("Создай вопросы из материалов этой темы.")}
         />
       )}
       {pending.map((job) => (
@@ -116,8 +119,8 @@ export default function Questions({
             href={`#${job.kind === "prepare_quiz" ? "prepare" : "generation"}/${job.id}`}
           >
             {job.kind === "prepare_quiz"
-              ? "Подготовка теста"
-              : "Создание вопросов"}{" "}
+              ? t("Подготовка теста")
+              : t("Создание вопросов")}{" "}
             · #{job.id}
           </a>
         </Button>

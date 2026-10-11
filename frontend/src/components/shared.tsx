@@ -1,3 +1,4 @@
+import { t, systemMessage } from "@/i18n"
 import { useState } from "react"
 import type { ReactNode } from "react"
 import {
@@ -67,12 +68,12 @@ export function ErrorNotice({
   return (
     <Alert variant="destructive">
       <AlertCircle />
-      <AlertTitle>Не получилось</AlertTitle>
+      <AlertTitle>{t("Не получилось")}</AlertTitle>
       <AlertDescription className="flex flex-col items-start gap-3">
-        {message}
+        {systemMessage(message)}
         {retry && (
           <Button variant="outline" onClick={retry}>
-            Попробовать ещё раз
+            {t("Попробовать ещё раз")}
           </Button>
         )}
       </AlertDescription>
@@ -103,7 +104,7 @@ export function Blank({
 }
 export function Loading() {
   return (
-    <div className="flex flex-col gap-4" aria-label="Загрузка">
+    <div className="flex flex-col gap-4" aria-label={t("Загрузка")}>
       <Skeleton className="h-8 w-2/3" />
       <Skeleton className="h-32 w-full" />
     </div>
@@ -116,7 +117,7 @@ export function Sources({ sources }: { sources: Source[] }) {
   if (!sources.length) return null
   return (
     <div className="sources">
-      <span>Из материалов:</span>
+      <span>{t("Из материалов:")}</span>
       {sources.map((s, i) => (
         <a
           key={i}
@@ -124,10 +125,10 @@ export function Sources({ sources }: { sources: Source[] }) {
           target="_blank"
           rel="noreferrer"
         >
-          {s.name || `Документ ${s.document_id}`} ·{" "}
+          {s.name || t("Документ {id}", { id: s.document_id })} ·{" "}
           {s.start_seconds !== undefined
             ? timeLabel(s.start_seconds)
-            : `стр. ${s.page}`}
+            : t("стр. {page}", { page: s.page })}
         </a>
       ))}
     </div>
@@ -174,7 +175,7 @@ export function NameDialog({
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>
-              Короткое название поможет легко найти материалы.
+              {t("Короткое название поможет легко найти материалы.")}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -195,7 +196,7 @@ export function NameDialog({
           >
             <FieldGroup>
               <Field data-invalid={!!error}>
-                <FieldLabel htmlFor="name">Название</FieldLabel>
+                <FieldLabel htmlFor="name">{t("Название")}</FieldLabel>
                 <Input
                   id="name"
                   value={name}
@@ -215,10 +216,11 @@ export function NameDialog({
                 onClick={() => setOpen(false)}
                 disabled={busy}
               >
-                Отмена
+                {t("Отмена")}
               </Button>
               <Button disabled={busy || !name.trim()}>
-                {busy && <PendingIcon />}Сохранить
+                {busy && <PendingIcon />}
+                {t("Сохранить")}
               </Button>
             </DialogFooter>
           </form>
@@ -253,10 +255,10 @@ export function EditCard({
           setError(null)
           setOpen(true)
         }}
-        aria-label="Изменить карточку"
+        aria-label={t("Изменить карточку")}
       >
         <Pencil data-icon="inline-start" />
-        Изменить
+        {t("Изменить")}
       </Button>
       <Dialog
         open={open}
@@ -266,9 +268,9 @@ export function EditCard({
       >
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Проверим карточку</DialogTitle>
+            <DialogTitle>{t("Проверим карточку")}</DialogTitle>
             <DialogDescription>
-              Можно уточнить вопрос, ответ и варианты перед занятием.
+              {t("Можно уточнить вопрос, ответ и варианты перед занятием.")}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -295,7 +297,7 @@ export function EditCard({
           >
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="question">Вопрос</FieldLabel>
+                <FieldLabel htmlFor="question">{t("Вопрос")}</FieldLabel>
                 <Textarea
                   id="question"
                   value={question}
@@ -304,7 +306,7 @@ export function EditCard({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="answer">Ответ</FieldLabel>
+                <FieldLabel htmlFor="answer">{t("Ответ")}</FieldLabel>
                 <Textarea
                   id="answer"
                   value={answer}
@@ -316,7 +318,7 @@ export function EditCard({
                 options.map((option, i) => (
                   <Field key={i}>
                     <FieldLabel htmlFor={`option-${i}`}>
-                      Вариант {i + 1}
+                      {t("Вариант {n}", { n: i + 1 })}
                     </FieldLabel>
                     <div className="flex gap-2">
                       <Input
@@ -333,7 +335,7 @@ export function EditCard({
                         type="button"
                         variant={correct === i ? "default" : "outline"}
                         aria-pressed={correct === i}
-                        aria-label={`Правильный вариант ${i + 1}`}
+                        aria-label={t("Правильный вариант {n}", { n: i + 1 })}
                         onClick={() => setCorrect(i)}
                       >
                         <Check />
@@ -351,10 +353,11 @@ export function EditCard({
                 onClick={() => setOpen(false)}
                 disabled={busy}
               >
-                Отмена
+                {t("Отмена")}
               </Button>
               <Button disabled={busy}>
-                {busy && <PendingIcon />}Сохранить изменения
+                {busy && <PendingIcon />}
+                {t("Сохранить изменения")}
               </Button>
             </DialogFooter>
           </form>
@@ -373,20 +376,22 @@ export function JobNotice({ job, retry }: { job: Job; retry?: () => void }) {
           <BookOpen />
         )}
         {job.status === "queued"
-          ? "В очереди"
+          ? t("В очереди")
           : job.status === "running"
-            ? "Готовим материалы"
+            ? t("Готовим материалы")
             : job.status === "failed"
-              ? "Задача не завершена"
-              : "Готово"}
+              ? t("Задача не завершена")
+              : t("Готово")}
         <Badge variant="secondary">#{job.id}</Badge>
       </AlertTitle>
       <AlertDescription className="flex flex-col items-start gap-3">
-        {job.error || "Можно закрыть страницу. Результат будет сохранён."}
+        {job.error
+          ? systemMessage(job.error)
+          : t("Можно закрыть страницу. Результат будет сохранён.")}
         {job.status === "failed" && retry && (
           <Button variant="outline" onClick={retry}>
             <RefreshCw data-icon="inline-start" />
-            Повторить задачу
+            {t("Повторить задачу")}
           </Button>
         )}
       </AlertDescription>
