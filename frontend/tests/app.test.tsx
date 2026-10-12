@@ -877,3 +877,131 @@ test("failed preparation explicitly restarts with current topic questions", asyn
   await waitFor(() => expect(window.location.hash).toBe("#prepare/13"))
   expect(starts).toBe(1)
 })
+
+test.each(["quiz", "flashcard"])(
+  "%s returns to its topic after starting and reopening the study page",
+  async (mode) => {
+    window.location.hash = "#library/topic/37"
+    server({
+      "GET /api/auth/me": user,
+      "GET /api/topics": [
+        {
+          id: 37,
+          subject_id: 4,
+          name: "Польская история",
+          version: 1,
+          card_count: 2,
+          document_count: 1,
+        },
+      ],
+      "POST /api/study": { id: 91 },
+      "GET /api/study/91": {
+        id: 91,
+        topic_ids: [37],
+        topic_names: ["Польская история"],
+        mode,
+        status: "active",
+        count: 2,
+        position: 0,
+        answered: 0,
+        correct: 0,
+        created: "2026-10-12T10:00:00",
+        card: {
+          id: 5,
+          topic_id: 37,
+          question: "Что произошло?",
+          mode,
+          options: mode === "quiz" ? ["Первое событие", "Второе событие"] : [],
+          version: 1,
+          status: "saved",
+          sources: [],
+          revealed: false,
+        },
+      },
+      "GET /api/study/91/explanations?position=0": [],
+      "GET /api/study/91/explanation-jobs?position=0": [],
+    })
+    const first = render(<App />)
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: mode === "quiz" ? "Тест" : "Флеш-карты",
+        exact: true,
+      })
+    )
+    await screen.findByText("Что произошло?")
+    expect(
+      screen.getByRole("link", { name: "К теме", exact: true })
+    ).toHaveAttribute("href", "#library/topic/37")
+    first.unmount()
+    render(<App />)
+    await userEvent.click(
+      await screen.findByRole("link", { name: "К теме", exact: true })
+    )
+    await waitFor(() => expect(window.location.hash).toBe("#library/topic/37"))
+    expect(
+      await screen.findByRole("button", { name: "Тест", exact: true })
+    ).toBeEnabled()
+  }
+)
+
+test.each(["quiz", "flashcard"])(
+  "completed %s offers topic return from both navigation and results",
+  async (mode) => {
+    window.location.hash = "#study/91"
+    server({
+      "GET /api/auth/me": user,
+      "GET /api/study/91": {
+        id: 91,
+        topic_ids: [37],
+        topic_names: ["Польская история"],
+        mode,
+        status: "completed",
+        count: 2,
+        position: 2,
+        answered: 2,
+        correct: 2,
+        created: "2026-10-12T10:00:00",
+        card: null,
+        review: [],
+      },
+    })
+    render(<App />)
+    await screen.findByText("Ещё один шаг вперёд")
+    const backLinks = screen.getAllByRole("link", {
+      name: "К теме",
+      exact: true,
+    })
+    expect(backLinks).toHaveLength(2)
+    for (const link of backLinks)
+      expect(link).toHaveAttribute("href", "#library/topic/37")
+  }
+)
+
+test("multi-topic study returns to the library instead of an arbitrary topic", async () => {
+  window.location.hash = "#study/91"
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/study/91": {
+      id: 91,
+      topic_ids: [37, 42],
+      topic_names: ["Первая тема", "Вторая тема"],
+      mode: "quiz",
+      status: "completed",
+      count: 2,
+      position: 2,
+      answered: 2,
+      correct: 2,
+      created: "2026-10-12T10:00:00",
+      card: null,
+      review: [],
+    },
+  })
+  render(<App />)
+  await screen.findByText("Ещё один шаг вперёд")
+  const backLinks = screen.getAllByRole("link", {
+    name: "Вернуться в библиотеку",
+    exact: true,
+  })
+  expect(backLinks).toHaveLength(2)
+  for (const link of backLinks) expect(link).toHaveAttribute("href", "#library")
+})

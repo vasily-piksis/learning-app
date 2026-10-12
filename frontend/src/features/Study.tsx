@@ -52,12 +52,17 @@ export default function Study({ id }: { id: number }) {
     return <ErrorNotice message={session.error} retry={session.refetch} />
   if (!session.data) return null
   const value = session.data
+  const topicId = value.topic_ids?.length === 1 ? value.topic_ids[0] : null
+  const back = {
+    href: topicId ? `#library/topic/${topicId}` : "#library",
+    label: topicId ? t("К теме") : t("Вернуться в библиотеку"),
+  }
   return (
     <div className="study-page">
       <Button asChild variant="ghost" className="self-start">
-        <a href="#history">
+        <a href={back.href}>
           <ArrowLeft data-icon="inline-start" />
-          {t("Мои занятия")}
+          {back.label}
         </a>
       </Button>
       <PageHeading
@@ -77,7 +82,7 @@ export default function Study({ id }: { id: number }) {
         />
       ) : (
         <div className="flex flex-col gap-8">
-          <Completed session={value} />
+          <Completed session={value} back={back} />
           {value.review?.length ? (
             <section className="flex flex-col gap-4">
               <h2>{t("Ответы и объяснения")}</h2>
@@ -311,7 +316,13 @@ function Question({
     </div>
   )
 }
-function Completed({ session }: { session: StudySession }) {
+function Completed({
+  session,
+  back,
+}: {
+  session: StudySession
+  back: { href: string; label: string }
+}) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null)
   return (
@@ -361,7 +372,7 @@ function Completed({ session }: { session: StudySession }) {
           </Button>
         )}
         <Button asChild variant="outline">
-          <a href="#library">{t("Вернуться в библиотеку")}</a>
+          <a href={back.href}>{back.label}</a>
         </Button>
       </CardContent>
     </Card>
