@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .venv
+.venv-semgrep
 .superpowers
 data
 **/__pycache__

@@ -136,11 +136,15 @@ docker run --rm --user 0 --entrypoint sh \
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements-dev.txt
+python3 -m venv .venv-semgrep
+.venv-semgrep/bin/pip install -r requirements-semgrep.txt
 npm ci --prefix frontend
 sh scripts/check.sh
 ```
 
-Общая проверка запускает **Ruff**, проверку форматирования, **Bandit**, **pytest**, **ESLint**, **Vitest** и production-сборку React. Эти же проверки и Docker build запускаются в GitHub Actions. Runtime-версии Python зафиксированы в `backend/requirements.lock`, npm — в `package-lock.json`.
+Общая проверка запускает **Ruff**, проверку форматирования, **Bandit**, **Semgrep**, **pytest**, **ESLint**, **Vitest** и production-сборку React. Эти же проверки и Docker build запускаются в GitHub Actions. Runtime-версии Python зафиксированы в `backend/requirements.lock`, npm — в `package-lock.json`.
+
+Semgrep Community Edition установлен с фиксированной версией в отдельном окружении `.venv-semgrep`: его зависимости изолированы от runtime lockfile приложения. Отдельный запуск: `sh scripts/semgrep.sh`; другой путь к исполняемому файлу можно задать через `SEMGREP_BIN`. Проверяются `backend/app` и `frontend/src` официальными наборами `p/python`, `p/react`, `p/typescript`, `p/security-audit`; находки и ошибки сканера останавливают проверку. Правила загружаются из Semgrep Registry, поэтому нужен доступ к сети; код анализируется локально, метрики и проверка новой версии отключены. Аккаунт и облачная загрузка результатов не требуются. Данные, `.env`, зависимости, сборки и временные файлы исключены. В runtime-образ приложения Semgrep не устанавливается.
 
 Для разработки в двух процессах:
 

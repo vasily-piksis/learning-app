@@ -1,0 +1,2 @@
+# Isolated development tool: its dependencies conflict with the runtime lockfile.
+semgrep==1.180.0

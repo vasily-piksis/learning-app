@@ -1,0 +1,15 @@
+.git/
+.venv/
+.venv-semgrep/
+.env
+.env.*
+data/
+backups/
+.superpowers/
+**/__pycache__/
+**/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/coverage/
