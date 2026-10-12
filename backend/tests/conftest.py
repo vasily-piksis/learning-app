@@ -8,7 +8,14 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def app(tmp_path):
     instance = create_app(
-        Settings(data_dir=tmp_path, app_origin="http://testserver", cookie_secure=False),
+        Settings(
+            data_dir=tmp_path,
+            app_origin="http://testserver",
+            cookie_secure=False,
+            openai_api_key="",
+            oxylabs_username="",
+            oxylabs_password="",
+        ),
         worker=False,
     )
     create_user(instance.state.db, "child", "Дочка", "strong-password")

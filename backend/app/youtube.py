@@ -21,6 +21,7 @@ from youtube_transcript_api import (
     YouTubeTranscriptApiException,
 )
 
+from . import oxylabs
 from .auth import require_user
 from .library import document_data, get_or_404
 from .models import Document, Job, SourcePage, Topic
@@ -144,8 +145,12 @@ def list_tracks(video):
         raise ValueError("Не удалось получить субтитры YouTube. Попробуйте позже") from None
 
 
-def resolve_tracks(video):
-    tracks = list_tracks(video)
+def resolve_tracks(video, settings=None):
+    tracks = (
+        oxylabs.list_tracks(settings, video)
+        if settings is not None and oxylabs.enabled(settings)
+        else list_tracks(video)
+    )
     if not tracks:
         raise ValueError("У видео нет доступных субтитров")
     generated = {track["language"] for track in tracks if track["is_generated"]}
@@ -159,10 +164,10 @@ def resolve_tracks(video):
 
 
 @router.post("/youtube/resolve")
-def resolve_video(body: VideoBody):
+def resolve_video(body: VideoBody, request: Request):
     try:
         video, url = video_url(body.url)
-        return {"url": url, **resolve_tracks(video)}
+        return {"url": url, **resolve_tracks(video, request.app.state.settings)}
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
 
@@ -197,7 +202,9 @@ def normalize_transcript(transcript):
 def add_youtube(identifier: int, body: YouTubeBody, request: Request):
     try:
         video, url = video_url(body.url)
-        language = body.language or resolve_tracks(video)["selected_language"]
+        language = (
+            body.language or resolve_tracks(video, request.app.state.settings)["selected_language"]
+        )
         if not language:
             raise ValueError("Выберите исходный язык из доступных дорожек субтитров")
     except ValueError as error:
@@ -250,7 +257,11 @@ def ingest_youtube(database, payload):
     if path.is_file():
         saved = json.loads(path.read_text())
     else:
-        saved = normalize_transcript(fetch_transcript(metadata["video_id"], metadata["language"]))
+        saved = (
+            oxylabs.fetch_transcript(database.settings, metadata["video_id"], metadata["language"])
+            if oxylabs.enabled(database.settings)
+            else normalize_transcript(fetch_transcript(metadata["video_id"], metadata["language"]))
+        )
         saved.update(video_id=metadata["video_id"], url=url)
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")

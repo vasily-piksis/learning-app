@@ -1089,6 +1089,34 @@ export const translations: Record<string, { pl: string; en: string }> = {
     pl: "Nie udało się pobrać napisów YouTube. Spróbuj później",
     en: "Could not fetch YouTube captions. Try again later",
   },
+  "Не удалось получить субтитры через Oxylabs. Попробуйте позже": {
+    pl: "Nie udało się pobrać napisów przez Oxylabs. Spróbuj później",
+    en: "Could not fetch captions through Oxylabs. Try again later",
+  },
+  "Oxylabs вернул некорректные данные субтитров": {
+    pl: "Oxylabs zwrócił nieprawidłowe dane napisów",
+    en: "Oxylabs returned invalid caption data",
+  },
+  "Укажите OXYLABS_USERNAME и OXYLABS_PASSWORD в .env": {
+    pl: "Uzupełnij OXYLABS_USERNAME i OXYLABS_PASSWORD w pliku .env",
+    en: "Set OXYLABS_USERNAME and OXYLABS_PASSWORD in .env",
+  },
+  "Проверьте логин и пароль API Oxylabs в .env": {
+    pl: "Sprawdź login i hasło API Oxylabs w pliku .env",
+    en: "Check the Oxylabs API username and password in .env",
+  },
+  "Oxylabs не разрешил этот запрос. Проверьте доступ к YouTube API": {
+    pl: "Oxylabs odrzucił zapytanie. Sprawdź dostęp do API YouTube w Oxylabs",
+    en: "Oxylabs denied this request. Check YouTube API access in Oxylabs",
+  },
+  "Oxylabs: проверьте остаток бюджета и лимит запросов": {
+    pl: "Oxylabs: sprawdź pozostały budżet i limit zapytań",
+    en: "Oxylabs: check your remaining budget and request limit",
+  },
+  "Ответ Oxylabs слишком большой": {
+    pl: "Odpowiedź Oxylabs jest za duża",
+    en: "Oxylabs response is too large",
+  },
   "Неверный логин или пароль": {
     pl: "Nieprawidłowy login lub hasło",
     en: "Incorrect username or password",
