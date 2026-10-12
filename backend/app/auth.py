@@ -1,7 +1,10 @@
 import hashlib
+import math
 import secrets
 import time
-from collections import defaultdict, deque
+from collections import deque
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import timedelta
 from threading import Lock
 
@@ -55,29 +58,73 @@ class Login(BaseModel):
     password: str = Field(max_length=1024)
 
 
+@dataclass
+class LoginAttempts:
+    failures: deque = field(default_factory=deque)
+    pending: int = 0
+    blocked_until: float = 0
+
+
 class LoginLimiter:
     def __init__(self):
-        self.entries = defaultdict(deque)
+        self.entries = {}
         self.lock = Lock()
+        self.clock = time.monotonic
 
-    def check(self, key):
+    @contextmanager
+    def attempt(self, key):
         with self.lock:
-            timestamp = time.monotonic()
-            for stale in list(self.entries):
-                if not self.entries[stale] or self.entries[stale][-1] < timestamp - 600:
+            timestamp = self.clock()
+            for stale, entry in list(self.entries.items()):
+                expires = max(
+                    entry.blocked_until, entry.failures[-1] + 900 if entry.failures else 0
+                )
+                if entry.pending == 0 and expires <= timestamp:
                     del self.entries[stale]
-            bucket = self.entries[key]
-            while bucket and bucket[0] < timestamp - 600:
-                bucket.popleft()
-            if len(bucket) >= 10:
-                raise HTTPException(429, "Слишком много попыток. Попробуйте через 10 минут")
-            bucket.append(timestamp)
+            entry = self.entries.setdefault(key, LoginAttempts())
+            if entry.blocked_until > timestamp:
+                raise HTTPException(
+                    429,
+                    "Слишком много попыток. Попробуйте через 15 минут",
+                    headers={"Retry-After": str(math.ceil(entry.blocked_until - timestamp))},
+                )
+            while entry.failures and entry.failures[0] <= timestamp - 900:
+                entry.failures.popleft()
+            # Reserve before hashing: parallel requests cannot exceed the same limit.
+            if len(entry.failures) + entry.pending >= 3:
+                raise HTTPException(
+                    429,
+                    "Слишком много одновременных попыток входа. Попробуйте позже",
+                    headers={"Retry-After": "1"},
+                )
+            entry.pending += 1
+        succeeded, failed = False, False
+        try:
+            yield
+            succeeded = True
+        except HTTPException as error:
+            failed = error.status_code == 401
+            raise
+        finally:
+            with self.lock:
+                entry.pending -= 1
+                if succeeded:
+                    entry.failures.clear()
+                    entry.blocked_until = 0
+                elif failed:
+                    entry.failures.append(self.clock())
+                    if len(entry.failures) >= 3:
+                        entry.blocked_until = self.clock() + 900
+                if entry.pending == 0 and not entry.failures:
+                    self.entries.pop(key, None)
 
 
 @router.post("/login")
 def login(body: Login, request: Request, response: Response):
-    request.app.state.login_limiter.check(request.client.host)
-    with request.app.state.db.session() as db:
+    with (
+        request.app.state.login_limiter.attempt(request.client.host),
+        request.app.state.db.session() as db,
+    ):
         user = db.scalar(select(User).where(User.username == body.username.strip().lower()))
         try:
             valid = hasher.verify(user.password_hash if user else dummy_hash, body.password)

@@ -1137,6 +1137,14 @@ export const translations: Record<string, { pl: string; en: string }> = {
     pl: "Za dużo prób. Spróbuj za 10 minut",
     en: "Too many attempts. Try in 10 minutes",
   },
+  "Слишком много попыток. Попробуйте через 15 минут": {
+    pl: "Za dużo prób. Spróbuj za 15 minut",
+    en: "Too many attempts. Try in 15 minutes",
+  },
+  "Слишком много одновременных попыток входа. Попробуйте позже": {
+    pl: "Za dużo jednoczesnych prób logowania. Spróbuj później",
+    en: "Too many simultaneous login attempts. Try again later",
+  },
   "Сначала откройте ответ": {
     pl: "Najpierw odkryj odpowiedź",
     en: "Reveal the answer first",
