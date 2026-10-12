@@ -57,9 +57,10 @@ export const errorText = (error: unknown) =>
 export function useQuery<T>(path: string | null, poll = 0) {
   const [state, setState] = useState<{
     key: string
+    path: string | null
     data: T | null
     error: string | null
-  }>({ key: "", data: null, error: null })
+  }>({ key: "", path: null, data: null, error: null })
   const [revision, setRevision] = useState(0)
   const key = `${path}:${revision}`
   useEffect(() => {
@@ -70,12 +71,13 @@ export function useQuery<T>(path: string | null, poll = 0) {
       pending = true
       try {
         const data = await api<T>(path)
-        if (alive) setState({ key, data, error: null })
+        if (alive) setState({ key, path, data, error: null })
       } catch (e) {
         if (alive)
           setState((previous) => ({
             key,
-            data: previous.key === key ? previous.data : null,
+            path,
+            data: previous.path === path ? previous.data : null,
             error: errorText(e),
           }))
       } finally {
@@ -90,9 +92,12 @@ export function useQuery<T>(path: string | null, poll = 0) {
     }
   }, [path, poll, key])
   return {
-    data: state.key === key ? state.data : null,
-    error: state.key === key ? state.error : null,
-    loading: !!path && state.key !== key,
+    data: state.path === path ? state.data : null,
+    error: state.path === path ? state.error : null,
+    loading:
+      !!path &&
+      state.key !== key &&
+      (state.path !== path || state.data === null),
     refetch: () => setRevision((x) => x + 1),
   }
 }

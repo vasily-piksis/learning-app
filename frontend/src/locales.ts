@@ -1117,6 +1117,26 @@ export const translations: Record<string, { pl: string; en: string }> = {
     pl: "Odpowiedź Oxylabs jest za duża",
     en: "Oxylabs response is too large",
   },
+  "Не удалось получить субтитры через DownSub. Попробуйте позже": {
+    pl: "Nie udało się pobrać napisów przez DownSub. Spróbuj później",
+    en: "Could not fetch captions through DownSub. Try again later",
+  },
+  "DownSub вернул некорректные данные субтитров": {
+    pl: "DownSub zwrócił nieprawidłowe dane napisów",
+    en: "DownSub returned invalid caption data",
+  },
+  "DownSub ограничил доступ или частоту запросов. Попробуйте позже": {
+    pl: "DownSub ograniczył dostęp lub częstotliwość zapytań. Spróbuj później",
+    en: "DownSub limited access or request frequency. Try again later",
+  },
+  "Ответ DownSub слишком большой": {
+    pl: "Odpowiedź DownSub jest za duża",
+    en: "DownSub response is too large",
+  },
+  "Сохранённые субтитры повреждены или имеют неверный формат": {
+    pl: "Zapisane napisy są uszkodzone lub mają nieprawidłowy format",
+    en: "Saved captions are damaged or have an invalid format",
+  },
   "Неверный логин или пароль": {
     pl: "Nieprawidłowy login lub hasło",
     en: "Incorrect username or password",

@@ -1,6 +1,6 @@
 from pathlib import Path
+from typing import Literal
 
-from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     openai_api_key: str = ""
     openai_model: str = "gpt-6-luna"
-    oxylabs_username: SecretStr = SecretStr("")
-    oxylabs_password: SecretStr = SecretStr("")
+    youtube_provider: Literal["downsub", "direct"] = "downsub"
     frontend_dir: Path = Path("frontend/dist")
     max_upload_bytes: int = 20 * 1024 * 1024

@@ -13,8 +13,7 @@ def app(tmp_path):
             app_origin="http://testserver",
             cookie_secure=False,
             openai_api_key="",
-            oxylabs_username="",
-            oxylabs_password="",
+            youtube_provider="direct",
         ),
         worker=False,
     )

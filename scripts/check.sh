@@ -9,3 +9,4 @@ sh scripts/semgrep.sh
 npm run lint --prefix frontend
 npm test --prefix frontend
 npm run build --prefix frontend
+npm run test:e2e --prefix frontend

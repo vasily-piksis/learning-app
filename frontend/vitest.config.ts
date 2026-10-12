@@ -4,5 +4,9 @@ import { resolve } from "node:path"
 export default defineConfig({
   plugins: [react()],
   resolve: { alias: { "@": resolve(import.meta.dirname, "./src") } },
-  test: { environment: "jsdom", setupFiles: ["./tests/setup.ts"] },
+  test: {
+    include: ["tests/**/*.test.{ts,tsx}"],
+    environment: "jsdom",
+    setupFiles: ["./tests/setup.ts"],
+  },
 })

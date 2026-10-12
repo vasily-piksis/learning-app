@@ -14,5 +14,7 @@ frontend/test-results
 docs
 backend/tests
 frontend/tests
+frontend/e2e
+frontend/playwright.config.ts
 frontend/playwright-report
 .DS_Store
