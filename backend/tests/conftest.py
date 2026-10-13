@@ -6,6 +6,18 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
+def retry_waits(monkeypatch):
+    """Keep the retry algorithm real; replace only wall-clock waits and jitter."""
+    import secrets
+    import time
+
+    waits = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+    monkeypatch.setattr(secrets, "randbelow", lambda _: 0)
+    return waits
+
+
+@pytest.fixture
 def app(tmp_path):
     instance = create_app(
         Settings(

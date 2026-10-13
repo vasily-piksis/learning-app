@@ -197,7 +197,7 @@ def test_multiline_srt_preserves_polish_and_exact_timing():
     ]
 
 
-@pytest.mark.parametrize("status", [401, 403, 429, 500, 302])
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 422, 302])
 def test_remote_failures_are_sanitized_not_retried_or_cached(app, monkeypatch, status):
     from app import downsub
 
@@ -214,6 +214,129 @@ def test_remote_failures_are_sanitized_not_retried_or_cached(app, monkeypatch, s
     assert "opaque-sensitive-url" not in str(error.value)
     assert len(calls) == 1
     assert not list((app.state.settings.data_dir / "youtube-cache").glob("*.json"))
+
+
+@pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504])
+def test_downsub_retries_transient_http(app, monkeypatch, retry_waits, status):
+    from app import downsub
+
+    count = [0]
+
+    def responder(request):
+        count[0] += 1
+        return (status, b"temporary", {}) if count[0] < 3 else successful(request)
+
+    calls = transport(monkeypatch, responder)
+    assert downsub.list_tracks(app.state.settings, VIDEO)[0]["language"] == "pl"
+    assert len(calls) == 3 and retry_waits == [1, 2]
+    assert len({request.body for request in calls}) == 1
+    assert downsub.list_tracks(app.state.settings, VIDEO)[0]["language"] == "pl"
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_downsub_retry_exhaustion_is_bounded_and_not_cached(app, monkeypatch, retry_waits, status):
+    from app import downsub
+
+    calls = transport(monkeypatch, lambda _: (status, b"sensitive-provider-detail", {}))
+    with pytest.raises(ValueError) as error:
+        downsub.list_tracks(app.state.settings, VIDEO)
+    assert len(calls) == 3 and retry_waits == [1, 2]
+    assert "sensitive-provider-detail" not in str(error.value)
+    assert not list((app.state.settings.data_dir / "youtube-cache").glob("*.json"))
+
+
+@pytest.mark.parametrize("failure", ["connection", "timeout", "ssl"])
+def test_downsub_classifies_network_failure(app, monkeypatch, retry_waits, failure):
+    from app import downsub
+    from requests.exceptions import ConnectionError, ReadTimeout, SSLError
+
+    errors = {"connection": ConnectionError, "timeout": ReadTimeout, "ssl": SSLError}
+    count = [0]
+
+    def responder(request):
+        count[0] += 1
+        if count[0] < 3:
+            raise errors[failure]("sensitive-provider-detail")
+        return successful(request)
+
+    calls = transport(monkeypatch, responder)
+    if failure == "ssl":
+        with pytest.raises(ValueError):
+            downsub.list_tracks(app.state.settings, VIDEO)
+        assert len(calls) == 1 and retry_waits == []
+    else:
+        assert downsub.list_tracks(app.state.settings, VIDEO)[0]["language"] == "pl"
+        assert len(calls) == 3 and retry_waits == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "header,delay,count",
+    [
+        ("5", [5], 2),
+        ("Tue, 13 Oct 2026 00:00:05 GMT", [5], 2),
+        ("120", [], 1),
+        ("NaN", [1], 2),
+        ("garbage", [1], 2),
+    ],
+)
+def test_downsub_honors_retry_after(app, monkeypatch, retry_waits, header, delay, count):
+    import time
+
+    from app import downsub
+
+    monkeypatch.setattr(time, "time", lambda: 1791849600)
+    attempt = [0]
+
+    def responder(request):
+        attempt[0] += 1
+        return (429, b"busy", {"Retry-After": header}) if attempt[0] == 1 else successful(request)
+
+    calls = transport(monkeypatch, responder)
+    if count == 1:
+        with pytest.raises(ValueError):
+            downsub.list_tracks(app.state.settings, VIDEO)
+    else:
+        assert downsub.list_tracks(app.state.settings, VIDEO)[0]["language"] == "pl"
+    assert len(calls) == count and retry_waits == delay
+
+
+def test_successful_download_after_retry_is_cached_with_original_times(
+    app, monkeypatch, retry_waits
+):
+    from app import downsub
+
+    downloads = [0]
+
+    def responder(request):
+        if request.method == "GET":
+            downloads[0] += 1
+            if downloads[0] < 3:
+                return (503, b"busy", {})
+        return successful(request)
+
+    calls = transport(monkeypatch, responder)
+    first = downsub.fetch_transcript(app.state.settings, VIDEO, "pl")
+    assert first["language"] == "pl" and first["segments"][0]["start"] == 5.894
+    assert len(calls) == 4 and retry_waits == [1, 2]
+    assert downsub.fetch_transcript(app.state.settings, VIDEO, "pl") == first
+    assert len(calls) == 4
+
+
+def test_downsub_honors_millisecond_cooldown(app, monkeypatch, retry_waits):
+    from app import downsub
+
+    attempt = [0]
+
+    def responder(request):
+        attempt[0] += 1
+        return (
+            (429, b"busy", {"retry-after-ms": "5000"}) if attempt[0] == 1 else successful(request)
+        )
+
+    calls = transport(monkeypatch, responder)
+    assert downsub.list_tracks(app.state.settings, VIDEO)[0]["language"] == "pl"
+    assert len(calls) == 2 and retry_waits == [5]
 
 
 def test_oversized_redirect_body_is_stopped_by_response_hook(app, monkeypatch):

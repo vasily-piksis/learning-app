@@ -3,11 +3,21 @@ import json
 from io import BytesIO
 
 import pymupdf
-from openai import OpenAI, OpenAIError
+from openai import APIConnectionError, APIStatusError, OpenAI, OpenAIError
 from PIL import Image, ImageOps
 from pydantic import ValidationError
 
+from .retry import TransientError, call
 from .schemas import ExplanationResult, Extraction, Generated, QuizOptions
+
+UNAVAILABLE = "Не удалось получить полный типизированный ответ OpenAI. Проверьте ключ, модель и доступность API; повторите задачу"
+QUOTA_CODES = {
+    "insufficient_quota",
+    "credit_balance_exhausted",
+    "organization_spend_limit_exceeded",
+    "project_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
+}
 
 
 class AIError(Exception):
@@ -27,6 +37,10 @@ RULES = """Ты помогаешь школьнику учиться. Испол
 class AI:
     def __init__(self, settings, client=None):
         self.settings = settings
+        # A single application-level budget also covers injected SDK clients.
+        # SDK retries would otherwise multiply the number of external requests.
+        if isinstance(client, OpenAI):
+            client = client.with_options(max_retries=0)
         self.client = client or (
             OpenAI(api_key=settings.openai_api_key, timeout=180, max_retries=0)
             if settings.openai_api_key
@@ -36,15 +50,44 @@ class AI:
     def parse(self, schema, messages, tokens):
         if self.client is None:
             raise AIError("Добавьте OPENAI_API_KEY в .env и перезапустите приложение")
+
+        def request():
+            try:
+                parameters = {
+                    "model": self.settings.openai_model,
+                    "input": messages,
+                    "text_format": schema,
+                    "max_output_tokens": tokens,
+                    "store": False,
+                    "reasoning": {"effort": "low"},
+                }
+                if isinstance(self.client, OpenAI):
+                    raw = self.client.responses.with_raw_response.parse(**parameters)
+                    response, headers = raw.parse(), raw.headers
+                else:
+                    response, headers = self.client.responses.parse(**parameters), {}
+                if (
+                    response.status == "failed"
+                    and getattr(getattr(response, "error", None), "code", None)
+                    in ("server_error", "rate_limit_exceeded")
+                    and headers.get("x-should-retry") != "false"
+                ):
+                    raise TransientError(UNAVAILABLE, headers)
+                return response
+            except APIConnectionError as error:
+                raise TransientError(UNAVAILABLE) from error
+            except APIStatusError as error:
+                if (
+                    (isinstance(error.code, str) and error.code in QUOTA_CODES)
+                    or error.type == "insufficient_quota"
+                    or error.response.headers.get("x-should-retry") == "false"
+                    or not (error.status_code in (408, 409, 429) or error.status_code >= 500)
+                ):
+                    raise
+                raise TransientError(UNAVAILABLE, error.response.headers) from error
+
         try:
-            response = self.client.responses.parse(
-                model=self.settings.openai_model,
-                input=messages,
-                text_format=schema,
-                max_output_tokens=tokens,
-                store=False,
-                reasoning={"effort": "low"},
-            )
+            response = call(request)
             if response.status != "completed":
                 raise AIError("Модель не завершила ответ. Попробуйте меньше страниц или карточек")
             for item in response.output:
@@ -54,10 +97,8 @@ class AI:
             if response.output_parsed is None:
                 raise AIError("Модель не вернула корректный структурированный ответ")
             return response.output_parsed
-        except (OpenAIError, ValidationError) as error:
-            raise AIError(
-                "Не удалось получить полный типизированный ответ OpenAI. Проверьте ключ, модель и доступность API; повторите задачу"
-            ) from error
+        except (OpenAIError, ValidationError, TransientError) as error:
+            raise AIError(UNAVAILABLE) from error
 
     def extract(self, path, mime, page_number, local_text):
         if mime == "application/pdf":

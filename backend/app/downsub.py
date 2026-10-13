@@ -13,8 +13,10 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from pydantic import Field, ValidationError
 from requests import RequestException, Session
+from requests.exceptions import ChunkedEncodingError, ConnectionError, SSLError, Timeout
 
 from .caption_cache import LANGUAGE, Track, Tracks, Transcript, cached, lock
+from .retry import TransientError, call
 
 UNAVAILABLE = "Не удалось получить субтитры через DownSub. Попробуйте позже"
 INVALID = "DownSub вернул некорректные данные субтитров"
@@ -70,30 +72,41 @@ def bounded_response(response, **kwargs):
 
 
 def request(method, url, **kwargs):
-    try:
-        with Session() as session:
-            session.trust_env = False
-            session.headers.update(
-                {"Origin": "https://downsub.com", "Referer": "https://downsub.com/"}
-            )
-            with session.request(
-                method,
-                url,
-                timeout=(10, 45),
-                stream=True,
-                allow_redirects=False,
-                hooks={"response": [bounded_response]},
-                **kwargs,
-            ) as response:
-                if response.status_code in (401, 403, 429):
-                    raise ValueError(
+    def send():
+        try:
+            with Session() as session:
+                session.trust_env = False
+                session.headers.update(
+                    {"Origin": "https://downsub.com", "Referer": "https://downsub.com/"}
+                )
+                with session.request(
+                    method,
+                    url,
+                    timeout=(10, 45),
+                    stream=True,
+                    allow_redirects=False,
+                    hooks={"response": [bounded_response]},
+                    **kwargs,
+                ) as response:
+                    message = (
                         "DownSub ограничил доступ или частоту запросов. Попробуйте позже"
+                        if response.status_code in (401, 403, 429)
+                        else UNAVAILABLE
                     )
-                if response.status_code != 200:
-                    raise ValueError(UNAVAILABLE)
-                return response.content
-    except RequestException:
-        raise ValueError(UNAVAILABLE) from None
+                    if response.status_code in (408, 429) or response.status_code >= 500:
+                        raise TransientError(message, response.headers)
+                    if response.status_code != 200:
+                        raise ValueError(message)
+                    return response.content
+        except SSLError:
+            raise ValueError(UNAVAILABLE) from None
+        except (ConnectionError, Timeout, ChunkedEncodingError):
+            raise TransientError(UNAVAILABLE) from None
+
+    try:
+        return call(send)
+    except (RequestException, TransientError) as error:
+        raise ValueError(str(error) if isinstance(error, TransientError) else UNAVAILABLE) from None
 
 
 class DownloadTrack(Track):
