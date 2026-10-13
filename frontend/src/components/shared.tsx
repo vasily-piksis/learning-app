@@ -6,7 +6,7 @@ import {
   BookOpen,
   Loader2,
   Pencil,
-  Check,
+  Trash2,
   RefreshCw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -27,12 +27,20 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { correctIndices } from "@/lib/answers"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldSet,
+  FieldLegend,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, errorText } from "@/api"
+import { api, errorText, APIError } from "@/api"
 import type { Card, Job, Source } from "@/types"
 
 export function PageHeading({
@@ -118,19 +126,26 @@ export function Sources({ sources }: { sources: Source[] }) {
   return (
     <div className="sources">
       <span>{t("Из материалов:")}</span>
-      {sources.map((s, i) => (
-        <a
-          key={i}
-          href={s.url || `/api/documents/${s.document_id}/download`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {s.name || t("Документ {id}", { id: s.document_id })} ·{" "}
-          {s.start_seconds !== undefined
-            ? timeLabel(s.start_seconds)
-            : t("стр. {page}", { page: s.page })}
-        </a>
-      ))}
+      {sources.map((s, i) =>
+        s.available === false ? (
+          <span key={i}>
+            {s.name || t("Документ {id}", { id: s.document_id })} ·{" "}
+            {t("Материал удалён")}
+          </span>
+        ) : (
+          <a
+            key={i}
+            href={s.url || `/api/documents/${s.document_id}/download`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {s.name || t("Документ {id}", { id: s.document_id })} ·{" "}
+            {s.start_seconds !== undefined
+              ? timeLabel(s.start_seconds)
+              : t("стр. {page}", { page: s.page })}
+          </a>
+        )
+      )}
     </div>
   )
 }
@@ -240,7 +255,7 @@ export function EditCard({
     [question, setQuestion] = useState(card.question),
     [answer, setAnswer] = useState(card.answer || ""),
     [options, setOptions] = useState(card.options),
-    [correct, setCorrect] = useState(card.correct_index ?? 0),
+    [correct, setCorrect] = useState<number[]>(correctIndices(card)),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null)
   return (
@@ -251,7 +266,7 @@ export function EditCard({
           setQuestion(card.question)
           setAnswer(card.answer || "")
           setOptions(card.options)
-          setCorrect(card.correct_index ?? 0)
+          setCorrect(correctIndices(card))
           setError(null)
           setOpen(true)
         }}
@@ -283,7 +298,7 @@ export function EditCard({
                   question,
                   answer,
                   options,
-                  correct_index: card.mode === "quiz" ? correct : null,
+                  correct_indices: card.mode === "quiz" ? correct : [],
                   version: card.version,
                 })
                 setOpen(false)
@@ -314,35 +329,43 @@ export function EditCard({
                   required
                 />
               </Field>
-              {card.mode === "quiz" &&
-                options.map((option, i) => (
-                  <Field key={i}>
-                    <FieldLabel htmlFor={`option-${i}`}>
-                      {t("Вариант {n}", { n: i + 1 })}
-                    </FieldLabel>
-                    <div className="flex gap-2">
-                      <Input
-                        id={`option-${i}`}
-                        value={option}
-                        onChange={(e) =>
-                          setOptions((o) =>
-                            o.map((v, n) => (n === i ? e.target.value : v))
-                          )
-                        }
-                        required
-                      />
-                      <Button
-                        type="button"
-                        variant={correct === i ? "default" : "outline"}
-                        aria-pressed={correct === i}
-                        aria-label={t("Правильный вариант {n}", { n: i + 1 })}
-                        onClick={() => setCorrect(i)}
-                      >
-                        <Check />
-                      </Button>
-                    </div>
-                  </Field>
-                ))}
+              {card.mode === "quiz" && (
+                <FieldSet>
+                  <FieldLegend>
+                    {t("Отметь все правильные варианты")}
+                  </FieldLegend>
+                  {options.map((option, i) => (
+                    <Field key={i}>
+                      <FieldLabel htmlFor={`option-${i}`}>
+                        {t("Вариант {n}", { n: i + 1 })}
+                      </FieldLabel>
+                      <div className="flex gap-2">
+                        <Input
+                          id={`option-${i}`}
+                          value={option}
+                          onChange={(e) =>
+                            setOptions((o) =>
+                              o.map((v, n) => (n === i ? e.target.value : v))
+                            )
+                          }
+                          required
+                        />
+                        <Checkbox
+                          checked={correct.includes(i)}
+                          aria-label={t("Правильный вариант {n}", { n: i + 1 })}
+                          onCheckedChange={(checked) =>
+                            setCorrect((indices) =>
+                              checked
+                                ? [...indices, i].sort((a, b) => a - b)
+                                : indices.filter((index) => index !== i)
+                            )
+                          }
+                        />
+                      </div>
+                    </Field>
+                  ))}
+                </FieldSet>
+              )}
             </FieldGroup>
             <Sources sources={card.sources} />
             <ErrorNotice message={error} />
@@ -355,7 +378,9 @@ export function EditCard({
               >
                 {t("Отмена")}
               </Button>
-              <Button disabled={busy}>
+              <Button
+                disabled={busy || (card.mode === "quiz" && !correct.length)}
+              >
                 {busy && <PendingIcon />}
                 {t("Сохранить изменения")}
               </Button>
@@ -381,7 +406,9 @@ export function JobNotice({ job, retry }: { job: Job; retry?: () => void }) {
             ? t("Готовим материалы")
             : job.status === "failed"
               ? t("Задача не завершена")
-              : t("Готово")}
+              : job.status === "cancelled"
+                ? t("Отменено")
+                : t("Готово")}
         <Badge variant="secondary">#{job.id}</Badge>
       </AlertTitle>
       <AlertDescription className="flex flex-col items-start gap-3">
@@ -396,5 +423,114 @@ export function JobNotice({ job, retry }: { job: Job; retry?: () => void }) {
         )}
       </AlertDescription>
     </Alert>
+  )
+}
+
+export function DeleteDialog({
+  path,
+  name,
+  label,
+  onDeleted,
+}: {
+  path: string
+  name: string
+  label: string
+  onDeleted: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [counts, setCounts] = useState<{
+    card_count: number
+    document_count: number
+    revision?: string
+  } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  async function show() {
+    setOpen(true)
+    setBusy(true)
+    setError(null)
+    setCounts(null)
+    try {
+      setCounts(
+        path.startsWith("/cards/")
+          ? { card_count: 1, document_count: 0 }
+          : await api(`${path}/deletion`)
+      )
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <Button variant="outline" onClick={() => void show()}>
+        <Trash2 data-icon="inline-start" />
+        {label}
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!busy) setOpen(value)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{label}</DialogTitle>
+            <DialogDescription>
+              {t("Удалить «{name}»?", { name })}{" "}
+              {t("Это действие нельзя отменить. История занятий сохранится.")}
+            </DialogDescription>
+          </DialogHeader>
+          {counts && (
+            <p>
+              {t(
+                "Материалов будет удалено: {documents}. Вопросов будет удалено: {cards}.",
+                { documents: counts.document_count, cards: counts.card_count }
+              )}
+            </p>
+          )}
+          {busy && <Loading />}
+          <ErrorNotice message={error} />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={busy}
+              autoFocus
+              onClick={() => setOpen(false)}
+            >
+              {t("Отмена")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy || !counts}
+              onClick={async () => {
+                setBusy(true)
+                setError(null)
+                try {
+                  await api(path, "DELETE", { revision: counts?.revision })
+                  setOpen(false)
+                  onDeleted()
+                } catch (e) {
+                  setError(errorText(e))
+                  if (e instanceof APIError && e.status === 409) {
+                    setCounts(null)
+                    try {
+                      setCounts(await api(`${path}/deletion`))
+                    } catch (refreshError) {
+                      setError(errorText(refreshError))
+                    }
+                  }
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              {t("Удалить")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

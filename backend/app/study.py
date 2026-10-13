@@ -3,14 +3,15 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 from sqlalchemy import func, select, text
 
 from .auth import require_user
 from .jobs import card_data, job_data
 from .library import get_or_404
 from .models import Attempt, Card, Explanation, Job, SessionCard, StudySession, Topic, now
-from .quiz import preparation_job, quiz_ready
+from .quiz import correct_indices, preparation_job, quiz_ready
+from .sources import available_sources
 
 router = APIRouter(prefix="/api/study", dependencies=[Depends(require_user)])
 
@@ -26,7 +27,8 @@ class PositionBody(BaseModel):
 
 class AnswerBody(PositionBody):
     idempotency_key: str = Field(min_length=1, max_length=80)
-    choice: int | None = Field(default=None, ge=0)
+    choice: StrictInt | None = Field(default=None, ge=0)
+    choices: list[StrictInt] | None = None
     remembered: bool | None = None
 
 
@@ -55,12 +57,17 @@ def at_position(db, session_id, position):
     return value
 
 
-def public_card(snapshot, revealed=False):
+def public_card(snapshot, revealed=False, db=None):
     value = {
         **snapshot,
         "sources": [{k: v for k, v in s.items() if k != "text"} for s in snapshot["sources"]],
     }
+    if db is not None:
+        value["sources"] = available_sources(db, value["sources"])
+    value["correct_indices"] = correct_indices(snapshot)
+    value["multiple_answers"] = len(value["correct_indices"]) > 1
     if not revealed:
+        value.pop("correct_indices", None)
         value.pop("answer", None)
         value.pop("correct_index", None)
     return value
@@ -82,6 +89,9 @@ def session_data(db, session, full=False):
         "id": session.id,
         "topic_ids": session.topic_ids,
         "topic_names": topic_names,
+        "active_topic_ids": [
+            identifier for identifier in session.topic_ids if not db.get(Topic, identifier).deleted
+        ],
         "mode": session.mode,
         "position": session.position,
         "status": session.status,
@@ -98,7 +108,7 @@ def session_data(db, session, full=False):
             result["review"].append(
                 {
                     "position": answered_card.position,
-                    "card": public_card(answered_card.snapshot, True),
+                    "card": public_card(answered_card.snapshot, True, db),
                     "correct": attempt.correct,
                     **attempt.value,
                 }
@@ -107,7 +117,7 @@ def session_data(db, session, full=False):
         if session.position < count:
             current = at_position(db, session.id, session.position)
             result["card"] = {
-                **public_card(current.snapshot, current.revealed),
+                **public_card(current.snapshot, current.revealed, db),
                 "session_card_id": current.id,
                 "revealed": current.revealed,
             }
@@ -158,7 +168,13 @@ def start(body: StartBody, request: Request):
         snapshots = [card_data(db, card, include_text=True) for card in cards]
         if body.mode == "flashcard":
             for snapshot in snapshots:
-                snapshot.update(mode="flashcard", options=[], correct_index=None)
+                snapshot.update(
+                    mode="flashcard",
+                    options=[],
+                    correct_index=None,
+                    correct_indices=[],
+                    multiple_answers=False,
+                )
         else:
             for snapshot in snapshots:
                 snapshot["mode"] = "quiz"
@@ -210,12 +226,12 @@ def reveal(identifier: int, body: PositionBody, request: Request):
         return session_data(db, session, full=True)
 
 
-def feedback(attempt, card, session_id):
+def feedback(attempt, card, session_id, db=None):
     return {
         "session_id": session_id,
         "position": card.position,
         "correct": attempt.correct,
-        "card": public_card(card.snapshot, True),
+        "card": public_card(card.snapshot, True, db),
         "next_position": card.position + 1,
     }
 
@@ -228,6 +244,8 @@ def answer(identifier: int, body: AnswerBody, request: Request):
         session = owned(db, identifier, user.id)
         card = at_position(db, identifier, body.position)
         value = {"choice": body.choice, "remembered": body.remembered}
+        if body.choices is not None:
+            value["choices"] = sorted(body.choices)
         prior = db.scalar(
             select(Attempt).where(
                 Attempt.user_id == user.id, Attempt.idempotency_key == body.idempotency_key
@@ -236,21 +254,29 @@ def answer(identifier: int, body: AnswerBody, request: Request):
         if prior:
             if prior.session_card_id != card.id or prior.value != value:
                 raise HTTPException(409, "Идентификатор запроса уже использован для другого ответа")
-            return feedback(prior, card, session.id)
+            return feedback(prior, card, session.id, db)
         if session.position != body.position or session.status != "active":
             raise HTTPException(409, "Ответ уже сохранён в другой вкладке. Обновите занятие")
         if session.mode == "quiz":
+            selected = (
+                body.choices
+                if body.choices is not None
+                else ([] if body.choice is None else [body.choice])
+            )
             if (
-                body.choice is None
+                not selected
+                or len(set(selected)) != len(selected)
+                or any(not 0 <= index < len(card.snapshot["options"]) for index in selected)
                 or body.remembered is not None
-                or body.choice >= len(card.snapshot["options"])
+                or (body.choices is not None and body.choice is not None)
+                or (len(correct_indices(card.snapshot)) == 1 and len(selected) != 1)
             ):
-                raise HTTPException(422, "Выберите один вариант")
-            correct = body.choice == card.snapshot["correct_index"]
+                raise HTTPException(422, "Выберите допустимые варианты ответа")
+            correct = set(selected) == set(correct_indices(card.snapshot))
         else:
             if not card.revealed:
                 raise HTTPException(409, "Сначала откройте ответ")
-            if body.remembered is None or body.choice is not None:
+            if body.remembered is None or body.choice is not None or body.choices is not None:
                 raise HTTPException(422, "Отметьте, помните ли ответ")
             correct = body.remembered
         attempt = Attempt(
@@ -268,7 +294,7 @@ def answer(identifier: int, body: AnswerBody, request: Request):
         )
         if session.position >= count:
             session.status = "completed"
-        return feedback(attempt, card, identifier)
+        return feedback(attempt, card, identifier, db)
 
 
 @router.post("/{identifier}/repeat")
@@ -302,6 +328,7 @@ def explanations(identifier: int, position: int, request: Request):
                 "question": value.question,
                 "parent_id": value.parent_id,
                 **value.result,
+                "sources": available_sources(db, value.result["sources"]),
             }
             for value in db.scalars(
                 select(Explanation)
@@ -318,7 +345,7 @@ def explanation_jobs(identifier: int, position: int, request: Request):
         owned(db, identifier, user.id)
         card = at_position(db, identifier, position)
         return [
-            job_data(job)
+            job_data(job, db)
             for job in db.scalars(
                 select(Job)
                 .where(

@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from requests import RequestException, Session
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from youtube_transcript_api import (
     AgeRestricted,
@@ -200,6 +200,8 @@ def normalize_transcript(transcript):
 
 @router.post("/topics/{identifier}/youtube")
 def add_youtube(identifier: int, body: YouTubeBody, request: Request):
+    with request.app.state.db.session() as db:
+        get_or_404(db, Topic, identifier)
     try:
         video, url = video_url(body.url)
         language = (
@@ -214,6 +216,7 @@ def add_youtube(identifier: int, body: YouTubeBody, request: Request):
     digest = hashlib.sha256(f"youtube:{video}:{language}".encode()).hexdigest()
     try:
         with database.session() as db:
+            db.execute(text("BEGIN IMMEDIATE"))
             topic = get_or_404(db, Topic, identifier)
             duplicate = db.scalar(
                 select(Document).where(Document.topic_id == identifier, Document.sha256 == digest)
@@ -249,7 +252,8 @@ def add_youtube(identifier: int, body: YouTubeBody, request: Request):
 
 def ingest_youtube(database, payload):
     with database.session() as db:
-        document = db.get(Document, payload["document_id"])
+        db.execute(text("BEGIN IMMEDIATE"))
+        document = get_or_404(db, Document, payload["document_id"])
         document.status = "processing"
         metadata, filename, url = document.source_meta, document.filename, document.source_url
     path = database.settings.data_dir / "files" / filename
@@ -263,11 +267,13 @@ def ingest_youtube(database, payload):
             else normalize_transcript(fetch_transcript(metadata["video_id"], metadata["language"]))
         )
         saved.update(video_id=metadata["video_id"], url=url)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
-        temporary.replace(path)
     with database.session() as db:
-        document = db.get(Document, payload["document_id"])
+        db.execute(text("BEGIN IMMEDIATE"))
+        document = get_or_404(db, Document, payload["document_id"])
+        if not path.is_file():
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(path)
         existing = set(
             db.scalars(select(SourcePage.number).where(SourcePage.document_id == document.id))
         )

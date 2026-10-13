@@ -1,3 +1,6 @@
+from .models import Document
+
+
 def source_data(document, page, include_text=False):
     value = {
         "page_id": page.id,
@@ -15,3 +18,13 @@ def source_data(document, page, include_text=False):
     if include_text:
         value["text"] = page.text
     return value
+
+
+def available_sources(db, sources):
+    values = []
+    for source in sources:
+        document = db.get(Document, source["document_id"])
+        values.append(
+            {**source, "available": document is not None and document.status != "deleted"}
+        )
+    return values

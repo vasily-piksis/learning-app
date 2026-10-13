@@ -1,3 +1,4 @@
+import { correctIndices } from "@/lib/answers"
 import { t } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -13,9 +14,10 @@ import {
   Loading,
   ErrorNotice,
   EditCard,
+  DeleteDialog,
   Sources,
 } from "@/components/shared"
-import { useQuery } from "@/api"
+import { useQuery, navigate } from "@/api"
 import type { Card as Question, Job, Topic } from "@/types"
 
 export default function Questions({
@@ -34,7 +36,7 @@ export default function Questions({
       (job) =>
         ["generate", "prepare_quiz"].includes(job.kind) &&
         job.topic_ids?.includes(topic.id) &&
-        job.status !== "succeeded"
+        !["succeeded", "cancelled"].includes(job.status)
     ) || []
   return (
     <div className="flex flex-col gap-4">
@@ -58,7 +60,7 @@ export default function Questions({
                 <ol className="flex flex-col gap-2">
                   {current.options.map((option, index) => (
                     <li key={index}>
-                      {index === current.correct_index ? "✓ " : ""}
+                      {correctIndices(current).includes(index) ? "✓ " : ""}
                       {option}
                     </li>
                   ))}
@@ -68,6 +70,14 @@ export default function Questions({
             </CardContent>
             <CardFooter>
               <EditCard card={current} onSaved={cards.refetch} />
+              <DeleteDialog
+                path={`/cards/${current.id}`}
+                name={current.question}
+                label={t("Удалить вопрос")}
+                onDeleted={() =>
+                  navigate(`library/topic/${topic.id}/questions`)
+                }
+              />
             </CardFooter>
           </Card>
         ) : (
@@ -105,6 +115,14 @@ export default function Questions({
                 )}
               </div>
             </CardHeader>
+            <CardFooter>
+              <DeleteDialog
+                path={`/cards/${card.id}`}
+                name={card.question}
+                label={t("Удалить вопрос")}
+                onDeleted={cards.refetch}
+              />
+            </CardFooter>
           </Card>
         ))
       ) : (

@@ -10,11 +10,12 @@ import {
 import {
   PageHeading,
   NameDialog,
+  DeleteDialog,
   Loading,
   ErrorNotice,
   Blank,
 } from "@/components/shared"
-import { api, useQuery } from "@/api"
+import { api, useQuery, navigate } from "@/api"
 import type { Topic as TopicData } from "@/types"
 import StartStudy from "./StartStudy"
 import Materials from "./Materials"
@@ -64,20 +65,28 @@ export default function Topic({
           </a>
         </Button>
         {!section && (
-          <NameDialog
-            title={t("Название темы")}
-            initial={topic.name}
-            trigger={
-              <Button variant="ghost">
-                <Pencil data-icon="inline-start" />
-                {t("Переименовать")}
-              </Button>
-            }
-            onSave={async (name) => {
-              await api(`/topics/${id}`, "PATCH", { name })
-              topics.refetch()
-            }}
-          />
+          <div className="flex flex-wrap gap-2">
+            <DeleteDialog
+              path={`/topics/${id}`}
+              name={topic.name}
+              label={t("Удалить тему")}
+              onDeleted={() => navigate(`library/subject/${topic.subject_id}`)}
+            />
+            <NameDialog
+              title={t("Название темы")}
+              initial={topic.name}
+              trigger={
+                <Button variant="ghost">
+                  <Pencil data-icon="inline-start" />
+                  {t("Переименовать")}
+                </Button>
+              }
+              onSave={async (name) => {
+                await api(`/topics/${id}`, "PATCH", { name })
+                topics.refetch()
+              }}
+            />
+          </div>
         )}
       </div>
       <PageHeading

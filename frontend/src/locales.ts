@@ -1,4 +1,47 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Состав изменился. Подтвердите удаление ещё раз": {
+    pl: "Zawartość się zmieniła. Potwierdź usunięcie ponownie",
+    en: "Contents changed. Confirm deletion again",
+  },
+  "Материал удалён": { pl: "Materiał usunięty", en: "Material deleted" },
+  "Удалить тему": { pl: "Usuń temat", en: "Delete topic" },
+  "Удалить материал": { pl: "Usuń materiał", en: "Delete material" },
+  "Удалить вопрос": { pl: "Usuń pytanie", en: "Delete question" },
+  Удалить: { pl: "Usuń", en: "Delete" },
+  "Удалить «{name}»?": { pl: "Usunąć „{name}”?", en: "Delete “{name}”?" },
+  "Это действие нельзя отменить. История занятий сохранится.": {
+    pl: "Tej operacji nie można cofnąć. Historia nauki zostanie zachowana.",
+    en: "This cannot be undone. Study history will be preserved.",
+  },
+  "Материалов будет удалено: {documents}. Вопросов будет удалено: {cards}.": {
+    pl: "Materiały do usunięcia: {documents}. Pytania do usunięcia: {cards}.",
+    en: "Materials to delete: {documents}. Questions to delete: {cards}.",
+  },
+  "Отметь все правильные варианты": {
+    pl: "Zaznacz wszystkie poprawne odpowiedzi",
+    en: "Mark all correct options",
+  },
+  "Выбери все правильные ответы": {
+    pl: "Wybierz wszystkie poprawne odpowiedzi",
+    en: "Select all correct answers",
+  },
+  "Пропущен правильный ответ": {
+    pl: "Pominięta poprawna odpowiedź",
+    en: "Missed correct answer",
+  },
+  "Проверьте вопрос, ответ и правильные варианты": {
+    pl: "Sprawdź pytanie, odpowiedź i poprawne warianty",
+    en: "Check the question, answer and correct options",
+  },
+  "Выберите допустимые варианты ответа": {
+    pl: "Wybierz poprawne warianty odpowiedzi",
+    en: "Select valid answer options",
+  },
+  "Материал или вопрос удалён. Задача отменена": {
+    pl: "Materiał lub pytanie zostały usunięte. Zadanie anulowane",
+    en: "Material or question deleted. Task cancelled",
+  },
+  Отменено: { pl: "Anulowane", en: "Cancelled" },
   "PDF, JPEG, PNG, WebP · до 20 МБ · до 50 страниц в PDF": {
     pl: "PDF, JPEG, PNG, WebP · do 20 MB · do 50 stron PDF",
     en: "PDF, JPEG, PNG, WebP · up to 20 MB · up to 50 PDF pages",

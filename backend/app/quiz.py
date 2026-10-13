@@ -5,12 +5,21 @@ from .models import Card, Job
 from .schemas import QuizOptions
 
 
+def correct_indices(card):
+    if isinstance(card, dict):
+        indices, index = card.get("correct_indices"), card.get("correct_index")
+    else:
+        indices, index = card.correct_indices, card.correct_index
+    return indices or ([] if index is None else [index])
+
+
 def quiz_ready(card):
     return (
         2 <= len(card.options) <= 6
         and len(set(card.options)) == len(card.options)
-        and card.correct_index is not None
-        and 0 <= card.correct_index < len(card.options)
+        and bool(correct_indices(card))
+        and len(set(correct_indices(card))) == len(correct_indices(card))
+        and all(0 <= index < len(card.options) for index in correct_indices(card))
     )
 
 
@@ -45,13 +54,15 @@ def preparation_job(db, user_id, topic_ids, snapshots):
     return job
 
 
-def prepare_options(ai, payload):
+def prepare_options(ai, payload, before_each=None):
     results = []
     for snapshot in payload["cards"]:
+        if before_each is not None:
+            before_each()
         result = QuizOptions.model_validate(ai.prepare_quiz(snapshot))
-        if (
-            result.card_id != snapshot["id"]
-            or result.options[result.correct_index] != snapshot["answer"]
+        if result.card_id != snapshot["id"] or (
+            len(result.correct_indices) == 1
+            and result.options[result.correct_indices[0]] != snapshot["answer"]
         ):
             raise ValueError("Модель изменила правильный ответ при подготовке теста")
         results.append(result)
@@ -72,4 +83,5 @@ def save_options(db, payload, results):
     cards = validate_preparation(db, payload)
     for card, result in zip(cards, results, strict=True):
         card.mode, card.options, card.correct_index = "quiz", result.options, result.correct_index
+        card.correct_indices = result.correct_indices
         card.version += 1

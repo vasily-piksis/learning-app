@@ -33,6 +33,7 @@ export type Document = {
 }
 export type Source = {
   document_id: number
+  available?: boolean
   page: number
   name?: string
   url?: string
@@ -47,6 +48,8 @@ export type Card = {
   mode: Mode
   options: string[]
   correct_index?: number | null
+  correct_indices?: number[]
+  multiple_answers?: boolean
   version: number
   status: string
   sources: Source[]
@@ -77,11 +80,13 @@ export type StudySession = {
     card: Card
     correct: boolean
     choice: number | null
+    choices?: number[]
     remembered: boolean | null
   }[]
   id: number
   topic_ids: number[]
   topic_names: string[]
+  active_topic_ids?: number[]
   mode: Mode
   position: number
   status: string

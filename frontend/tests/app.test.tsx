@@ -1005,3 +1005,203 @@ test("multi-topic study returns to the library instead of an arbitrary topic", a
   expect(backLinks).toHaveLength(2)
   for (const link of backLinks) expect(link).toHaveAttribute("href", "#library")
 })
+
+test("multiple choice keeps selections and marks extra and missed answers", async () => {
+  window.location.hash = "#study/80"
+  const card = {
+    id: 80,
+    question: "Все переводы table?",
+    mode: "quiz",
+    options: ["стол", "таблица", "стул"],
+    multiple_answers: true,
+    sources: [],
+  }
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/study/80": {
+      id: 80,
+      topic_ids: [1],
+      topic_names: ["Слова"],
+      mode: "quiz",
+      position: 0,
+      status: "active",
+      count: 1,
+      answered: 0,
+      correct: 0,
+      card,
+    },
+    "GET /api/study/80/explanations?position=0": [],
+    "GET /api/study/80/explanation-jobs?position=0": [],
+    "POST /api/study/80/answer": (init) => {
+      expect(JSON.parse(String(init?.body)).choices).toEqual([0, 2])
+      return {
+        session_id: 80,
+        position: 0,
+        correct: false,
+        card: { ...card, answer: "стол; таблица", correct_indices: [0, 1] },
+        next_position: 1,
+      }
+    },
+  })
+  render(<App />)
+  expect(await screen.findByText("Выбери все правильные ответы")).toBeVisible()
+  await userEvent.click(screen.getByRole("checkbox", { name: /стол/ }))
+  await userEvent.click(screen.getByRole("checkbox", { name: /стул/ }))
+  await userEvent.click(screen.getByRole("button", { name: "Проверить ответ" }))
+  expect(await screen.findByText("Неверно. Правильный ответ:")).toBeVisible()
+  expect(
+    screen.getByRole("checkbox", { name: /стул/ }).closest("label")
+  ).toHaveClass("incorrect")
+  expect(screen.getByText("Пропущен правильный ответ")).toBeVisible()
+})
+
+test("material deletion requires confirmation and preserves the item after cancellation or failure", async () => {
+  window.location.hash = "#library/topic/90/materials"
+  let removed = false
+  let fail = true
+  const material = {
+    id: 90,
+    topic_id: 90,
+    name: "wrong.pdf",
+    mime: "application/pdf",
+    size: 100,
+    page_count: 1,
+    status: "ready",
+    job_id: 90,
+    error: null,
+  }
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/topics": [
+      {
+        id: 90,
+        subject_id: 1,
+        name: "Тестовая",
+        version: 1,
+        card_count: 2,
+        document_count: 1,
+      },
+    ],
+    "GET /api/topics/90/documents": () => (removed ? [] : [material]),
+    "GET /api/documents/90/deletion": { card_count: 2, document_count: 1 },
+    "DELETE /api/documents/90": () => {
+      if (fail)
+        return { http_status: 500, detail: "Не удалось выполнить запрос" }
+      removed = true
+      return { deleted: true }
+    },
+  })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Удалить материал" })
+  )
+  expect(await screen.findByText(/Вопросов будет удалено: 2/)).toBeVisible()
+  await userEvent.click(screen.getByRole("button", { name: "Отмена" }))
+  expect(screen.getByRole("link", { name: "wrong.pdf" })).toBeVisible()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Удалить материал" })
+  )
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Удалить", exact: true })
+  )
+  expect(await screen.findByRole("alert")).toBeVisible()
+  expect(screen.getByRole("dialog")).toBeVisible()
+  fail = false
+  await userEvent.click(
+    screen.getByRole("button", { name: "Удалить", exact: true })
+  )
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("link", { name: "wrong.pdf" })
+    ).not.toBeInTheDocument()
+  )
+})
+
+test("cancelled generation is visibly cancelled and cannot be retried", async () => {
+  window.location.hash = "#generation/99"
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/jobs/99": {
+      id: 99,
+      kind: "generate",
+      status: "cancelled",
+      topic_ids: [1],
+      error: "Материал или вопрос удалён. Задача отменена",
+      result: null,
+    },
+  })
+  render(<App />)
+  expect(await screen.findByText("Отменено")).toBeVisible()
+  expect(
+    screen.queryByRole("button", { name: "Повторить задачу" })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByText("Готово")).not.toBeInTheDocument()
+})
+
+test("changed deletion preview requires a new confirmation with fresh counts", async () => {
+  window.location.hash = "#library/topic/93/materials"
+  let changed = false
+  let removed = false
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/topics": [
+      {
+        id: 93,
+        subject_id: 1,
+        name: "Тема",
+        version: 1,
+        card_count: 0,
+        document_count: 1,
+      },
+    ],
+    "GET /api/topics/93/documents": () =>
+      removed
+        ? []
+        : [
+            {
+              id: 93,
+              name: "source.pdf",
+              size: 100,
+              page_count: 1,
+              status: "ready",
+            },
+          ],
+    "GET /api/documents/93/deletion": () => ({
+      card_count: changed ? 1 : 0,
+      document_count: 1,
+      revision: changed ? "new" : "old",
+    }),
+    "DELETE /api/documents/93": (init) => {
+      const body = JSON.parse(String(init?.body))
+      if (body.revision === "old") {
+        changed = true
+        return {
+          http_status: 409,
+          detail: "Состав изменился. Подтвердите удаление ещё раз",
+        }
+      }
+      expect(body.revision).toBe("new")
+      removed = true
+      return { deleted: true }
+    },
+  })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Удалить материал" })
+  )
+  await screen.findByText(/Вопросов будет удалено: 0/)
+  await userEvent.click(
+    screen.getByRole("button", { name: "Удалить", exact: true })
+  )
+  expect(await screen.findByText(/Вопросов будет удалено: 1/)).toBeVisible()
+  expect(screen.getByRole("dialog")).toBeVisible()
+  expect(screen.getByText("source.pdf", { exact: true })).toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Удалить", exact: true })
+  )
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("link", { name: "source.pdf" })
+    ).not.toBeInTheDocument()
+  )
+})

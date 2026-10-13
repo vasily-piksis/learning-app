@@ -11,6 +11,7 @@ from .auth import LoginLimiter, identity
 from .auth import router as auth_router
 from .config import Settings
 from .db import Database
+from .deletion import router as deletion_router
 from .jobs import recover_jobs, worker_loop
 from .jobs import router as jobs_router
 from .library import router as library_router
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
 
     app.include_router(auth_router)
     app.include_router(library_router)
+    app.include_router(deletion_router)
     app.include_router(jobs_router)
     app.include_router(study_router)
     app.include_router(youtube_router)

@@ -13,7 +13,13 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field"
-import { Blank, Loading, ErrorNotice, PendingIcon } from "@/components/shared"
+import {
+  Blank,
+  Loading,
+  ErrorNotice,
+  PendingIcon,
+  DeleteDialog,
+} from "@/components/shared"
 import { api, useQuery, errorText } from "@/api"
 import type { Topic, Document } from "@/types"
 export default function Materials({
@@ -168,6 +174,15 @@ export default function Materials({
                 ))}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-2">
+                <DeleteDialog
+                  path={`/documents/${document.id}`}
+                  name={document.name}
+                  label={t("Удалить материал")}
+                  onDeleted={() => {
+                    documents.refetch()
+                    refresh()
+                  }}
+                />
                 <Badge
                   variant={
                     document.status === "failed"

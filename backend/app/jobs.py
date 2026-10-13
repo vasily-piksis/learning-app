@@ -8,11 +8,12 @@ from sqlalchemy import select, text, update
 
 from .ai import AIError
 from .auth import require_user
+from .deletion import cleanup_deleted_files
 from .library import get_or_404
 from .models import Card, CardSource, Document, Explanation, Job, SourcePage, Topic, now
-from .quiz import prepare_options, save_options, validate_preparation
+from .quiz import correct_indices, prepare_options, save_options, validate_preparation
 from .schemas import CardEdit, GenerateBody, GeneratedCard, SaveCards
-from .sources import source_data
+from .sources import available_sources, source_data
 from .youtube import ingest_youtube
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
@@ -29,13 +30,16 @@ def question_key(topic_id, question, answer, language):
     )
 
 
-def job_data(job):
+def job_data(job, db=None):
+    result = job.result
+    if db is not None and job.kind == "explain" and result:
+        result = {**result, "sources": available_sources(db, result["sources"])}
     return {
         "id": job.id,
         "kind": job.kind,
         "status": job.status,
         "error": job.error,
-        "result": job.result,
+        "result": result,
         "created": job.created.isoformat(),
         "updated": job.updated.isoformat(),
         "session_card_id": job.payload.get("session_card_id") if job.kind == "explain" else None,
@@ -45,6 +49,7 @@ def job_data(job):
 
 
 def recover_jobs(database):
+    cleanup_deleted_files(database)
     with database.session() as db:
         for job in db.scalars(select(Job).where(Job.status == "running")):
             job.status = "failed"
@@ -63,12 +68,14 @@ def check_refs(refs, sources):
 
 def ingest(database, ai, payload):
     with database.session() as db:
-        document = db.get(Document, payload["document_id"])
+        db.execute(text("BEGIN IMMEDIATE"))
+        document = get_or_404(db, Document, payload["document_id"])
         path = database.settings.data_dir / "files" / document.filename
         document.status = "processing"
         mime, count, identifier = document.mime, document.page_count, document.id
     for number in range(1, count + 1):
         with database.session() as db:
+            get_or_404(db, Document, identifier)
             if db.scalar(
                 select(SourcePage).where(
                     SourcePage.document_id == identifier, SourcePage.number == number
@@ -85,6 +92,8 @@ def ingest(database, ai, payload):
         if result.is_blank and result.text.strip():
             raise ValueError("Страница не может быть одновременно пустой и содержать текст")
         with database.session() as db:
+            db.execute(text("BEGIN IMMEDIATE"))
+            get_or_404(db, Document, identifier)
             db.add(
                 SourcePage(
                     document_id=identifier,
@@ -95,14 +104,21 @@ def ingest(database, ai, payload):
                 )
             )
     with database.session() as db:
-        db.get(Document, identifier).status = "ready"
+        db.execute(text("BEGIN IMMEDIATE"))
+        get_or_404(db, Document, identifier).status = "ready"
     return {"document_id": identifier, "pages": count}
 
 
-def generate(database, ai, payload):
+def generate(database, ai, payload, job_id=None):
     results, reasons = [], []
     topics = payload["topics"]
     for index, topic in enumerate(topics):
+        with database.session() as db:
+            if job_id is not None and db.get(Job, job_id).status != "running":
+                raise ValueError("Задача отменена")
+            get_or_404(db, Topic, topic["id"])
+            for source in topic["sources"]:
+                get_or_404(db, Document, source["document_id"])
         count = payload["count"] // len(topics) + int(index < payload["count"] % len(topics))
         generated = ai.generate(
             topic["id"],
@@ -160,12 +176,19 @@ def run_job(database, ai, identifier):
         elif kind == "youtube":
             result = ingest_youtube(database, payload)
         elif kind == "generate":
-            cards, reasons = generate(database, ai, payload)
+            cards, reasons = generate(database, ai, payload, identifier)
             result = {"card_ids": [], "warnings": reasons}
         elif kind == "prepare_quiz":
             with database.session() as db:
                 validate_preparation(db, payload)
-            options = prepare_options(ai, payload)
+
+            def check_preparation():
+                with database.session() as db:
+                    if db.get(Job, identifier).status != "running":
+                        raise ValueError("Задача отменена")
+                    validate_preparation(db, payload)
+
+            options = prepare_options(ai, payload, before_each=check_preparation)
             result = {"card_ids": [item.card_id for item in options]}
         elif kind == "explain":
             explanation = ai.explain(payload["snapshot"], payload["question"], payload["history"])
@@ -187,10 +210,12 @@ def run_job(database, ai, identifier):
         with database.session() as db:
             db.execute(text("BEGIN IMMEDIATE"))
             job = db.get(Job, identifier)
+            if job.status != "running":
+                return
             if kind == "generate":
                 existing = {
                     question_key(c.topic_id, c.question, c.answer, c.language)
-                    for c in db.scalars(select(Card))
+                    for c in db.scalars(select(Card).where(Card.status != "deleted"))
                 }
                 skipped = 0
                 for generated, sources in cards:
@@ -211,6 +236,7 @@ def run_job(database, ai, identifier):
                         mode=generated.mode,
                         options=generated.options,
                         correct_index=generated.correct_index,
+                        correct_indices=generated.correct_indices,
                     )
                     db.add(card)
                     db.flush()
@@ -241,7 +267,10 @@ def run_job(database, ai, identifier):
         else:
             message = "Не удалось обработать задачу. Проверьте материалы и повторите"
         with database.session() as db:
+            db.execute(text("BEGIN IMMEDIATE"))
             job = db.get(Job, identifier)
+            if job.status != "running":
+                return
             job.status, job.error = "failed", message
             if kind in {"ingest", "youtube"}:
                 db.get(Document, payload["document_id"]).status = "failed"
@@ -264,7 +293,7 @@ def jobs(request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         return [
-            job_data(job)
+            job_data(job, db)
             for job in db.scalars(
                 select(Job).where(Job.user_id == user.id).order_by(Job.id.desc()).limit(100)
             )
@@ -278,7 +307,7 @@ def job(identifier: int, request: Request):
         value = get_or_404(db, Job, identifier)
         if value.kind in {"explain", "prepare_quiz"} and value.user_id != user.id:
             raise HTTPException(404, "Не найдено")
-        return job_data(value)
+        return job_data(value, db)
 
 
 @router.post("/jobs/{identifier}/retry")
@@ -299,21 +328,34 @@ def retry(identifier: int, request: Request):
         value.status, value.error = "queued", None
         if value.kind in {"ingest", "youtube"}:
             db.get(Document, value.payload["document_id"]).status = "queued"
-        return job_data(value)
+        return job_data(value, db)
 
 
 @router.post("/generate")
 def start_generation(body: GenerateBody, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
         if body.document_ids is not None:
-            chosen = list(db.scalars(select(Document).where(Document.id.in_(body.document_ids))))
+            chosen = list(
+                db.scalars(
+                    select(Document).where(
+                        Document.id.in_(body.document_ids), Document.status != "deleted"
+                    )
+                )
+            )
             if len(chosen) != len(body.document_ids) or any(
                 d.topic_id not in body.topic_ids for d in chosen
             ):
                 raise HTTPException(422, "Документы должны принадлежать выбранным темам")
         else:
-            chosen = list(db.scalars(select(Document).where(Document.topic_id.in_(body.topic_ids))))
+            chosen = list(
+                db.scalars(
+                    select(Document).where(
+                        Document.topic_id.in_(body.topic_ids), Document.status != "deleted"
+                    )
+                )
+            )
         if any(d.status != "ready" for d in chosen) and not body.allow_partial:
             raise HTTPException(
                 409, "Есть неготовые материалы. Дождитесь обработки или явно выберите готовые"
@@ -338,7 +380,9 @@ def start_generation(body: GenerateBody, request: Request):
                 raise HTTPException(422, "В каждой выбранной теме нужны готовые материалы")
             existing = [
                 {"question": c.question, "answer": c.answer, "language": c.language}
-                for c in db.scalars(select(Card).where(Card.topic_id == identifier))
+                for c in db.scalars(
+                    select(Card).where(Card.topic_id == identifier, Card.status != "deleted")
+                )
             ]
             length += sum(len(c["question"]) + len(c["answer"]) for c in existing)
             topics.append({"id": identifier, "sources": sources, "existing": existing})
@@ -358,7 +402,7 @@ def start_generation(body: GenerateBody, request: Request):
         )
         db.add(value)
         db.flush()
-        return job_data(value)
+        return job_data(value, db)
 
 
 def card_data(db, card, include_text=False):
@@ -379,6 +423,8 @@ def card_data(db, card, include_text=False):
         "mode": card.mode,
         "options": card.options,
         "correct_index": card.correct_index,
+        "correct_indices": correct_indices(card),
+        "multiple_answers": len(correct_indices(card)) > 1,
         "version": card.version,
         "status": card.status,
         "sources": sources,
@@ -393,7 +439,7 @@ def list_cards(
     status: str | None = None,
 ):
     with request.app.state.db.session() as db:
-        query = select(Card).order_by(Card.id)
+        query = select(Card).where(Card.status != "deleted").order_by(Card.id)
         if topic_id is not None:
             query = query.where(Card.topic_id == topic_id)
         if job_id is not None:
@@ -415,7 +461,7 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
             validated = GeneratedCard.model_validate(
                 {
                     **{k: original[k] for k in ["topic_id", "mode"]},
-                    **body.model_dump(exclude={"version"}),
+                    **body.model_dump(exclude={"version"}, exclude_none=True),
                     "sources": [
                         {"document_id": s["document_id"], "page": s["page"]}
                         for s in original["sources"]
@@ -423,11 +469,10 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
                 }
             )
         except ValidationError:
-            raise HTTPException(
-                422, "Проверьте вопрос, ответ и единственный правильный вариант"
-            ) from None
+            raise HTTPException(422, "Проверьте вопрос, ответ и правильные варианты") from None
         card.question, card.answer = validated.question, validated.answer
         card.options, card.correct_index = validated.options, validated.correct_index
+        card.correct_indices = validated.correct_indices
         card.version += 1
         return card_data(db, card)
 
@@ -435,7 +480,10 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
 @router.post("/cards/save")
 def save_cards(body: SaveCards, request: Request):
     with request.app.state.db.session() as db:
-        cards = list(db.scalars(select(Card).where(Card.id.in_(body.card_ids))))
+        db.execute(text("BEGIN IMMEDIATE"))
+        cards = list(
+            db.scalars(select(Card).where(Card.id.in_(body.card_ids), Card.status != "deleted"))
+        )
         if len(cards) != len(set(body.card_ids)):
             raise HTTPException(404, "Карточка не найдена")
         for card in cards:

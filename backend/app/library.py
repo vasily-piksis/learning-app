@@ -8,7 +8,7 @@ import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from .auth import require_user
@@ -21,7 +21,11 @@ Image.MAX_IMAGE_PIXELS = 30_000_000
 
 def get_or_404(db, model, identifier):
     value = db.get(model, identifier)
-    if value is None:
+    if (
+        value is None
+        or getattr(value, "deleted", False)
+        or (model in {Document, Card} and value.status == "deleted")
+    ):
         raise HTTPException(404, "Не найдено")
     return value
 
@@ -30,7 +34,11 @@ def subject_data(db, value):
     return {
         "id": value.id,
         "name": value.name,
-        "topic_count": db.scalar(select(func.count(Topic.id)).where(Topic.subject_id == value.id)),
+        "topic_count": db.scalar(
+            select(func.count(Topic.id)).where(
+                Topic.subject_id == value.id, Topic.deleted.is_(False)
+            )
+        ),
     }
 
 
@@ -44,7 +52,9 @@ def topic_data(db, value):
             select(func.count(Card.id)).where(Card.topic_id == value.id, Card.status == "saved")
         ),
         "document_count": db.scalar(
-            select(func.count(Document.id)).where(Document.topic_id == value.id)
+            select(func.count(Document.id)).where(
+                Document.topic_id == value.id, Document.status != "deleted"
+            )
         ),
     }
 
@@ -77,7 +87,7 @@ def rename_subject(identifier: int, body: NameBody, request: Request):
 @router.get("/topics")
 def topics(request: Request, subject_id: int | None = None):
     with request.app.state.db.session() as db:
-        query = select(Topic).order_by(Topic.id)
+        query = select(Topic).where(Topic.deleted.is_(False)).order_by(Topic.id)
         if subject_id is not None:
             query = query.where(Topic.subject_id == subject_id)
         return [topic_data(db, value) for value in db.scalars(query)]
@@ -190,7 +200,9 @@ def documents(identifier: int, request: Request):
         return [
             document_data(db, value)
             for value in db.scalars(
-                select(Document).where(Document.topic_id == identifier).order_by(Document.id)
+                select(Document)
+                .where(Document.topic_id == identifier, Document.status != "deleted")
+                .order_by(Document.id)
             )
         ]
 
@@ -221,6 +233,8 @@ async def upload(identifier: int, request: Request, file: UploadFile):
     path.write_bytes(data)
     try:
         with database.session() as db:
+            db.execute(text("BEGIN IMMEDIATE"))
+            get_or_404(db, Topic, identifier)
             value = Document(
                 topic_id=identifier,
                 name=Path((file.filename or "Материал").replace("\\", "/")).name[:240],

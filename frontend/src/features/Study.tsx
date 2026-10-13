@@ -1,3 +1,7 @@
+import { correctIndices } from "@/lib/answers"
+import { cn } from "@/lib/utils"
+import { Checkbox } from "@/components/ui/checkbox"
+import { FieldSet, FieldLegend } from "@/components/ui/field"
 import { t } from "@/i18n"
 import { useRef, useState } from "react"
 import {
@@ -52,7 +56,11 @@ export default function Study({ id }: { id: number }) {
     return <ErrorNotice message={session.error} retry={session.refetch} />
   if (!session.data) return null
   const value = session.data
-  const topicId = value.topic_ids?.length === 1 ? value.topic_ids[0] : null
+  const activeTopics = value.active_topic_ids ?? value.topic_ids
+  const topicId =
+    value.topic_ids?.length === 1 && activeTopics?.includes(value.topic_ids[0])
+      ? value.topic_ids[0]
+      : null
   const back = {
     href: topicId ? `#library/topic/${topicId}` : "#library",
     label: topicId ? t("К теме") : t("Вернуться в библиотеку"),
@@ -109,6 +117,7 @@ function Question({
 }) {
   const [card, setCard] = useState<StudyCard>(session.card!),
     [choice, setChoice] = useState<number | null>(null),
+    [choices, setChoices] = useState<number[]>([]),
     [feedback, setFeedback] = useState<Feedback | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null)
@@ -117,6 +126,7 @@ function Question({
     position: number
     idempotency_key: string
     choice?: number
+    choices?: number[]
     remembered?: boolean
   } | null>(null)
   async function answer(remembered?: boolean) {
@@ -125,7 +135,11 @@ function Question({
       answerRequest.current = {
         position: session.position,
         idempotency_key: crypto.randomUUID(),
-        ...(session.mode === "quiz" ? { choice: choice! } : { remembered }),
+        ...(session.mode === "quiz"
+          ? card.multiple_answers
+            ? { choices }
+            : { choice: choice! }
+          : { remembered }),
       }
     setBusy(true)
     setError(null)
@@ -177,11 +191,52 @@ function Question({
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           {session.mode === "quiz" && (
-            <div className="quiz-options">
+            <FieldSet className="quiz-options">
+              {shown.multiple_answers && (
+                <FieldLegend>{t("Выбери все правильные ответы")}</FieldLegend>
+              )}
               {shown.options.map((option, i) => {
-                const correct = !!feedback && shown.correct_index === i
-                const incorrect =
-                  !!feedback && !feedback.correct && choice === i
+                const correct = !!feedback && correctIndices(shown).includes(i)
+                const selected = shown.multiple_answers
+                  ? choices.includes(i)
+                  : choice === i
+                const incorrect = !!feedback && selected && !correct
+                if (shown.multiple_answers)
+                  return (
+                    <label
+                      key={i}
+                      className={cn(
+                        "quiz-option flex items-center gap-3 rounded-xl border p-4",
+                        selected && "bg-secondary",
+                        feedback &&
+                          correct &&
+                          "correct border-emerald-600 bg-emerald-50 text-emerald-900",
+                        incorrect &&
+                          "incorrect border-destructive bg-destructive/10 text-destructive"
+                      )}
+                    >
+                      <Checkbox
+                        checked={selected}
+                        disabled={busy || !!feedback || answerLocked}
+                        aria-label={option}
+                        onCheckedChange={(checked) =>
+                          setChoices((indices) =>
+                            checked
+                              ? [...indices, i].sort((a, b) => a - b)
+                              : indices.filter((index) => index !== i)
+                          )
+                        }
+                      />
+                      <span>{option}</span>
+                      {correct && <Check aria-hidden="true" />}
+                      {incorrect && <X aria-hidden="true" />}
+                      {feedback && correct && !selected && (
+                        <span className="text-sm">
+                          {t("Пропущен правильный ответ")}
+                        </span>
+                      )}
+                    </label>
+                  )
                 return (
                   <Button
                     key={i}
@@ -219,7 +274,7 @@ function Question({
                   </Button>
                 )
               })}
-            </div>
+            </FieldSet>
           )}
           {revealed && (
             <div className="answer-content">
@@ -250,7 +305,10 @@ function Question({
           ) : session.mode === "quiz" ? (
             <Button
               className="ml-auto"
-              disabled={busy || choice === null}
+              disabled={
+                busy ||
+                (card.multiple_answers ? !choices.length : choice === null)
+              }
               onClick={() => void answer()}
             >
               {busy && <PendingIcon />}
@@ -388,6 +446,7 @@ function ReviewCard({
     card: StudyCard
     correct: boolean
     choice: number | null
+    choices?: number[]
   }
 }) {
   const [open, setOpen] = useState(false)
@@ -403,10 +462,12 @@ function ReviewCard({
         <CardTitle>{item.card.question}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {item.choice !== null && (
+        {(item.choices?.length || item.choice != null) && (
           <p className="text-sm text-muted-foreground">
             {t("Твой ответ: {answer}", {
-              answer: item.card.options[item.choice],
+              answer: (item.choices || [item.choice!])
+                .map((index) => item.card.options[index])
+                .join("; "),
             })}
           </p>
         )}

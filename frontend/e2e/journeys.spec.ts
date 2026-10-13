@@ -358,6 +358,7 @@ test("edit questions, append materials and keep another user's history private",
   await page.screenshot({
     path: testInfo.outputPath("topic-questions.png"),
     fullPage: true,
+    animations: "disabled",
   })
   expect(
     await page.evaluate(
@@ -462,6 +463,136 @@ test("photos and selected topics include only the chosen learning material", asy
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth + 1
+    )
+  ).toBe(true)
+})
+
+test("multiple answers, deletion confirmations, reupload and preserved history", async ({
+  page,
+}, testInfo) => {
+  await login(page)
+  const name = `Cleanup ${testInfo.project.name}`
+  const topic = await createTopic(page, name)
+  await page.goto(`/#${topic}/materials`)
+  await addVideo(page)
+  await generate(page, topic, 1)
+  await page.getByRole("button", { name: "Edit card", exact: true }).click()
+  await page
+    .getByLabel("Question", { exact: true })
+    .fill("Select all translations of table")
+  await page.getByLabel("Answer", { exact: true }).fill("stół; tabela")
+  await page.getByLabel("Option 1", { exact: true }).fill("stół")
+  await page.getByLabel("Option 2", { exact: true }).fill("tabela")
+  await page.getByLabel("Option 3", { exact: true }).fill("krzesło")
+  await page
+    .getByRole("checkbox", { name: "Correct option 2", exact: true })
+    .check()
+  await page.getByRole("button", { name: "Save changes", exact: true }).click()
+  await saveDrafts(page, 1)
+  await page.getByRole("button", { name: "Test", exact: true }).click()
+  await expect(
+    page.getByText("Select all correct answers", { exact: true })
+  ).toBeVisible()
+  await page.getByRole("checkbox", { name: "stół", exact: true }).check()
+  await page.getByRole("checkbox", { name: "krzesło", exact: true }).check()
+  await page.getByRole("button", { name: "Check answer", exact: true }).click()
+  await expect(
+    page.getByText("Missed correct answer", { exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByRole("checkbox", { name: "krzesło" }).locator("..")
+  ).toHaveClass(/incorrect/)
+  await expect(
+    page.getByText("Questions saved in topics", { exact: true })
+  ).toBeHidden()
+  await page.screenshot({
+    path: `/tmp/learning-multiple-${testInfo.project.name}.png`,
+    fullPage: true,
+    animations: "disabled",
+  })
+  await page
+    .getByRole("button", { name: "Session result", exact: true })
+    .click()
+  await expect(
+    page.getByText("Your answer: stół; krzesło", { exact: true })
+  ).toBeVisible()
+  const sessionURL = page.url()
+  await page
+    .getByRole("link", { name: "Back to topic", exact: true })
+    .first()
+    .click()
+  await page.goto(`/#${topic}/materials`)
+  await page
+    .getByRole("button", { name: "Delete material", exact: true })
+    .click()
+  await expect(
+    page.getByText("Materials to delete: 1. Questions to delete: 1.", {
+      exact: true,
+    })
+  ).toBeVisible()
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(
+    page.getByRole("link", { name: "Download saved captions" })
+  ).toBeVisible()
+  await page
+    .getByRole("button", { name: "Delete material", exact: true })
+    .click()
+  await page.getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(
+    page.getByRole("link", { name: "Download saved captions" })
+  ).toHaveCount(0)
+  await page.goto(sessionURL)
+  await expect(
+    page.getByText("Your answer: stół; krzesło", { exact: true })
+  ).toBeVisible()
+  await expect(page.getByText(/Material deleted/)).toBeVisible()
+  await page.goto(`/#${topic}/questions`)
+  await expect(
+    page.getByText("No questions yet", { exact: true })
+  ).toBeVisible()
+  await page.goto(`/#${topic}/materials`)
+  await addVideo(page)
+  await generate(page, topic, 1)
+  await saveDrafts(page, 1)
+  await page.goto(`/#${topic}/questions`)
+  await page
+    .getByRole("button", { name: "Delete question", exact: true })
+    .click()
+  await page.getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(
+    page.getByText("No questions yet", { exact: true })
+  ).toBeVisible()
+  await page.goto(`/#${topic}`)
+  await page.getByRole("button", { name: "Delete topic", exact: true }).click()
+  await expect(
+    page.getByText("Questions saved in topics", { exact: true })
+  ).toBeHidden()
+  await page.screenshot({
+    path: `/tmp/learning-delete-${testInfo.project.name}.png`,
+    fullPage: true,
+    animations: "disabled",
+  })
+  await page.getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(page).toHaveURL(/#library\/subject\/\d+$/)
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0)
+  await page.goto(sessionURL)
+  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible()
+  await expect(
+    page.getByRole("link", { name: "Return to library", exact: true }).first()
+  ).toHaveAttribute("href", "#library")
+  await expect(
+    page.getByText("Your answer: stół; krzesło", { exact: true })
+  ).toBeVisible()
+  await page
+    .getByRole("button", { name: "Review difficult cards", exact: true })
+    .click()
+  await page.getByRole("checkbox", { name: "stół", exact: true }).check()
+  await page.getByRole("checkbox", { name: "tabela", exact: true }).check()
+  await page.getByRole("button", { name: "Check answer", exact: true }).click()
+  await expect(page.getByText("Correct!", { exact: true })).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1
     )
   ).toBe(true)
 })

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 
 class NameBody(BaseModel):
@@ -36,13 +36,29 @@ class Extraction(Strict):
     language: str | None = None
 
 
+def normalize_correct(value):
+    indices = value.correct_indices or (
+        [] if value.correct_index is None else [value.correct_index]
+    )
+    if (
+        not indices
+        or len(set(indices)) != len(indices)
+        or any(not 0 <= index < len(value.options) for index in indices)
+        or (value.correct_index is not None and value.correct_index not in indices)
+    ):
+        raise ValueError("Укажите правильные варианты ответа")
+    value.correct_indices = sorted(indices)
+    value.correct_index = indices[0] if len(indices) == 1 else None
+
+
 class GeneratedCard(Strict):
     topic_id: int
     question: str
     answer: str
     mode: Literal["flashcard", "quiz"]
     options: list[str]
-    correct_index: int | None
+    correct_index: StrictInt | None = None
+    correct_indices: list[StrictInt] = Field(default_factory=list)
     sources: list[SourceRef]
     language: str | None = None
 
@@ -53,9 +69,8 @@ class GeneratedCard(Strict):
         if self.mode == "quiz":
             if not 2 <= len(self.options) <= 6 or len(set(self.options)) != len(self.options):
                 raise ValueError("Тесту нужны от 2 до 6 различных вариантов")
-            if self.correct_index is None or not 0 <= self.correct_index < len(self.options):
-                raise ValueError("Тесту нужен ровно один правильный вариант")
-        elif self.options or self.correct_index is not None:
+            normalize_correct(self)
+        elif self.options or self.correct_index is not None or self.correct_indices:
             raise ValueError("У флеш-карты нет вариантов ответа")
         return self
 
@@ -68,16 +83,16 @@ class Generated(Strict):
 class QuizOptions(Strict):
     card_id: int
     options: list[str] = Field(min_length=2, max_length=6)
-    correct_index: int = Field(ge=0)
+    correct_index: StrictInt | None = None
+    correct_indices: list[StrictInt] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_options(self):
-        if (
-            self.correct_index >= len(self.options)
-            or len(set(self.options)) != len(self.options)
-            or any(not option.strip() for option in self.options)
+        if len(set(self.options)) != len(self.options) or any(
+            not option.strip() for option in self.options
         ):
             raise ValueError("Тесту нужны различные варианты и один правильный ответ")
+        normalize_correct(self)
         return self
 
 
@@ -112,7 +127,8 @@ class CardEdit(BaseModel):
     question: str = Field(min_length=1, max_length=10000)
     answer: str = Field(min_length=1, max_length=10000)
     options: list[str]
-    correct_index: int | None
+    correct_index: StrictInt | None = None
+    correct_indices: list[StrictInt] | None = None
     version: int
 
 

@@ -1,3 +1,4 @@
+import { correctIndices } from "@/lib/answers"
 import { t, systemMessage } from "@/i18n"
 import { useState } from "react"
 import { Check } from "lucide-react"
@@ -19,6 +20,7 @@ import {
   Blank,
   PendingIcon,
   EditCard,
+  DeleteDialog,
   Sources,
 } from "@/components/shared"
 import { api, useQuery, errorText, navigate } from "@/api"
@@ -81,7 +83,7 @@ export default function Drafts({ job }: { job: Job }) {
                 <ol className="flex flex-col gap-2">
                   {card.options.map((v, i) => (
                     <li key={i} className="flex items-center gap-2">
-                      {i === card.correct_index && (
+                      {correctIndices(card).includes(i) && (
                         <Check className="size-4 text-primary" />
                       )}
                       {v}
@@ -93,6 +95,15 @@ export default function Drafts({ job }: { job: Job }) {
             </CardContent>
             <CardFooter>
               <EditCard card={card} onSaved={cards.refetch} />
+              <DeleteDialog
+                path={`/cards/${card.id}`}
+                name={card.question}
+                label={t("Удалить вопрос")}
+                onDeleted={() => {
+                  setSelected((ids) => ids.filter((id) => id !== card.id))
+                  cards.refetch()
+                }}
+              />
             </CardFooter>
           </Card>
         ))

@@ -52,6 +52,7 @@ class Topic(Base):
     subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     version: Mapped[int] = mapped_column(default=1)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created: Mapped[datetime] = mapped_column(default=now)
 
 
@@ -110,6 +111,7 @@ class Card(Base):
     mode: Mapped[str] = mapped_column(String(20))
     options: Mapped[list] = mapped_column(JSON, default=list)
     correct_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    correct_indices: Mapped[list] = mapped_column(JSON, default=list)
     version: Mapped[int] = mapped_column(default=1)
     status: Mapped[str] = mapped_column(String(20), default="draft")
 
