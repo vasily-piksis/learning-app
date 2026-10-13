@@ -1,4 +1,41 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Выбрать занятия": { pl: "Wybierz sesje", en: "Select sessions" },
+  "Завершить выбор": { pl: "Zakończ wybieranie", en: "Done selecting" },
+  "Выбрать все показанные": {
+    pl: "Wybierz wszystkie widoczne",
+    en: "Select all shown",
+  },
+  "Снять выделение": { pl: "Odznacz wszystkie", en: "Clear selection" },
+  "Выбрать занятие #{id}": {
+    pl: "Wybierz sesję #{id}",
+    en: "Select session #{id}",
+  },
+  "Удалить выбранные ({count})": {
+    pl: "Usuń wybrane ({count})",
+    en: "Delete selected ({count})",
+  },
+  "Удалить выбранные занятия?": {
+    pl: "Usunąć wybrane sesje?",
+    en: "Delete selected sessions?",
+  },
+  "Будет удалено занятий: {count}.": {
+    pl: "Sesje do usunięcia: {count}.",
+    en: "Sessions to delete: {count}.",
+  },
+  "Удалено занятий: {count}.": {
+    pl: "Usunięte sesje: {count}.",
+    en: "Sessions deleted: {count}.",
+  },
+  "Удаляем…": { pl: "Usuwanie…", en: "Deleting…" },
+  "Ответы и объяснения этих занятий будут удалены без возможности восстановления. Библиотека и материалы сохранятся.":
+    {
+      pl: "Odpowiedzi i wyjaśnienia z tych sesji zostaną trwale usunięte. Biblioteka i materiały zostaną zachowane.",
+      en: "Answers and explanations from these sessions will be permanently deleted. Your library and materials will be kept.",
+    },
+  "Занятие не найдено. Обновите историю": {
+    pl: "Nie znaleziono sesji. Odśwież historię",
+    en: "Session not found. Refresh history",
+  },
   "Удалить предмет": { pl: "Usuń przedmiot", en: "Delete subject" },
   "Тем будет удалено: {topics}.": {
     pl: "Tematy do usunięcia: {topics}.",

@@ -1,10 +1,10 @@
 import random
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictInt
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
 from .auth import require_user
 from .jobs import card_data, job_data
@@ -19,6 +19,10 @@ router = APIRouter(prefix="/api/study", dependencies=[Depends(require_user)])
 class StartBody(BaseModel):
     topic_ids: list[int] = Field(min_length=1, max_length=30)
     mode: Literal["quiz", "flashcard"]
+
+
+class DeleteHistoryBody(BaseModel):
+    session_ids: list[Annotated[StrictInt, Field(gt=0)]] = Field(min_length=1, max_length=200)
 
 
 class PositionBody(BaseModel):
@@ -41,7 +45,7 @@ class ExplainBody(PositionBody):
 
 def owned(db, identifier, user_id):
     value = get_or_404(db, StudySession, identifier)
-    if value.user_id != user_id:
+    if value.user_id != user_id or value.status == "deleted":
         raise HTTPException(404, "Не найдено")
     return value
 
@@ -195,11 +199,46 @@ def history(request: Request):
             session_data(db, value)
             for value in db.scalars(
                 select(StudySession)
-                .where(StudySession.user_id == user.id)
+                .where(StudySession.user_id == user.id, StudySession.status != "deleted")
                 .order_by(StudySession.id.desc())
                 .limit(200)
             )
         ]
+
+
+@router.post("/delete")
+def delete_history(body: DeleteHistoryBody, request: Request):
+    user = require_user(request)
+    with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
+        identifiers = set(body.session_ids)
+        sessions = list(
+            db.scalars(
+                select(StudySession).where(
+                    StudySession.id.in_(identifiers),
+                    StudySession.user_id == user.id,
+                    StudySession.status != "deleted",
+                )
+            )
+        )
+        if len(sessions) != len(identifiers):
+            raise HTTPException(404, "Занятие не найдено. Обновите историю")
+        card_ids = select(SessionCard.id).where(SessionCard.session_id.in_(identifiers))
+        for job in db.scalars(
+            select(Job).where(
+                Job.kind == "explain",
+                Job.payload["session_card_id"].as_integer().in_(card_ids),
+            )
+        ):
+            # Keep the ID reserved so an in-flight worker cannot write into a new job.
+            job.status, job.payload, job.result, job.error = "deleted", {}, None, None
+        db.execute(delete(Explanation).where(Explanation.session_card_id.in_(card_ids)))
+        db.execute(delete(Attempt).where(Attempt.session_card_id.in_(card_ids)))
+        db.execute(delete(SessionCard).where(SessionCard.session_id.in_(identifiers)))
+        for session in sessions:
+            # Empty tombstones also prevent old browser tabs from reaching reused IDs.
+            session.status, session.topic_ids, session.position = "deleted", [], 0
+        return {"deleted_count": len(sessions)}
 
 
 @router.get("/{identifier}")
@@ -301,6 +340,7 @@ def answer(identifier: int, body: AnswerBody, request: Request):
 def repeat(identifier: int, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
         session = owned(db, identifier, user.id)
         cards = list(
             db.scalars(

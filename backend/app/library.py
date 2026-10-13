@@ -24,7 +24,7 @@ def get_or_404(db, model, identifier):
     if (
         value is None
         or getattr(value, "deleted", False)
-        or (model in {Document, Card} and value.status == "deleted")
+        or (model in {Document, Card, Job} and value.status == "deleted")
     ):
         raise HTTPException(404, "Не найдено")
     return value

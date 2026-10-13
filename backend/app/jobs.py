@@ -304,7 +304,10 @@ def jobs(request: Request):
         return [
             job_data(job, db)
             for job in db.scalars(
-                select(Job).where(Job.user_id == user.id).order_by(Job.id.desc()).limit(100)
+                select(Job)
+                .where(Job.user_id == user.id, Job.status != "deleted")
+                .order_by(Job.id.desc())
+                .limit(100)
             )
         ]
 

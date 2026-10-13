@@ -18,3 +18,10 @@ frontend/e2e
 frontend/playwright.config.ts
 frontend/playwright-report
 .DS_Store
+backups
+incoming
+ops
+start.sh
+update.sh
+DEPLOYMENT.txt
+compose.override.yaml
