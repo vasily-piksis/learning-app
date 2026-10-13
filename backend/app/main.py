@@ -21,6 +21,12 @@ from .youtube import router as youtube_router
 
 def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAPI:
     settings = settings or Settings()
+    frontend, storage = settings.frontend_dir.resolve(), settings.data_dir.resolve()
+    if frontend.is_relative_to(storage) or storage.is_relative_to(frontend):
+        raise ValueError("FRONTEND_DIR и DATA_DIR должны быть отдельными каталогами")
+    for entry in (frontend / "assets", frontend / "index.html"):
+        if entry.exists() and not entry.resolve().is_relative_to(frontend):
+            raise ValueError(f"Public {entry.name} must stay inside FRONTEND_DIR")
     db = Database(settings)
 
     @asynccontextmanager

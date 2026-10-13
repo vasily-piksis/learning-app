@@ -1,4 +1,9 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Удалить предмет": { pl: "Usuń przedmiot", en: "Delete subject" },
+  "Тем будет удалено: {topics}.": {
+    pl: "Tematy do usunięcia: {topics}.",
+    en: "Topics to delete: {topics}.",
+  },
   "Состав изменился. Подтвердите удаление ещё раз": {
     pl: "Zawartość się zmieniła. Potwierdź usunięcie ponownie",
     en: "Contents changed. Confirm deletion again",

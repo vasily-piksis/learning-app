@@ -596,3 +596,129 @@ test("multiple answers, deletion confirmations, reupload and preserved history",
     )
   ).toBe(true)
 })
+
+test("delete a whole subject, keep private originals protected and preserve history", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await login(page)
+  const name = `Subject cleanup ${testInfo.project.name}`
+  const topic = await createTopic(page, name)
+  const topicId = topic.split("/").pop()
+  const topicData = await (
+    await page.request.get(`/api/topics/${topicId}`)
+  ).json()
+  const subjectRoute = `/#library/subject/${topicData.subject_id}`
+  await page.goto(`/#${topic}/materials`)
+  await page
+    .getByLabel("Choose PDF or photos", { exact: true })
+    .setInputFiles({
+      name: "private.pdf",
+      mimeType: "application/pdf",
+      buffer: pdf("Original private lesson for browser QA"),
+    })
+  await page
+    .getByRole("button", { name: "Upload files (1)", exact: true })
+    .click()
+  await expect(
+    page.getByRole("link", { name: "private.pdf", exact: true })
+  ).toBeVisible()
+  const pdfDownload = await page
+    .getByRole("link", { name: "private.pdf", exact: true })
+    .getAttribute("href")
+  await addVideo(page)
+  await generate(page, topic, 1)
+  await saveDrafts(page, 1)
+  await page.getByRole("button", { name: "Test", exact: true }).click()
+  await page.getByRole("button", { name: /Wisła/ }).click()
+  await page.getByRole("button", { name: "Check answer", exact: true }).click()
+  await page
+    .getByRole("button", { name: "Session result", exact: true })
+    .click()
+  await expect(
+    page.getByText("Session completed. Your result is saved in history.")
+  ).toBeVisible()
+  const sessionURL = page.url()
+  const anonymous = await browser.newContext()
+  expect(
+    (
+      await anonymous.request.get(new URL(pdfDownload!, page.url()).href)
+    ).status()
+  ).toBe(401)
+  const docs = await (
+    await page.request.get(`/api/topics/${topicId}/documents`)
+  ).json()
+  const captions = docs.find((doc: { source_url?: string }) => !!doc.source_url)
+  expect(
+    (
+      await anonymous.request.get(
+        new URL(`/api/documents/${captions.id}/download`, page.url()).href
+      )
+    ).status()
+  ).toBe(401)
+  await anonymous.close()
+  expect((await page.request.get(pdfDownload!)).status()).toBe(200)
+  await page.goto(subjectRoute)
+  await page.getByRole("button", { name: "Add topic", exact: true }).click()
+  await page.getByLabel("Name", { exact: true }).fill("Empty child topic")
+  await page.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(page).toHaveURL(/#library\/topic\/\d+$/)
+  await page.goto(subjectRoute)
+  await page
+    .getByRole("button", { name: "Delete subject", exact: true })
+    .click()
+  await expect(
+    page.getByText("Topics to delete: 2.", { exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByText("Materials to delete: 2. Questions to delete: 1.", {
+      exact: true,
+    })
+  ).toBeVisible()
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(
+    page.getByRole("link", { name: "Empty child topic", exact: true })
+  ).toBeVisible()
+  await page
+    .getByRole("combobox", { name: "Interface language" })
+    .selectOption("pl")
+  await page
+    .getByRole("button", { name: "Usuń przedmiot", exact: true })
+    .click()
+  await expect(
+    page.getByText("Tematy do usunięcia: 2.", { exact: true })
+  ).toBeVisible()
+  await page.screenshot({
+    path: `/tmp/learning-subject-${testInfo.project.name}.png`,
+    fullPage: true,
+    animations: "disabled",
+  })
+  await page.getByRole("button", { name: "Usuń", exact: true }).click()
+  await expect(page).toHaveURL(/#library$/)
+  await expect(
+    page.getByRole("link", { name: `History ${name}`, exact: true })
+  ).toHaveCount(0)
+  expect((await page.request.get(pdfDownload!)).status()).toBe(404)
+  expect(
+    (await page.request.get(`/api/documents/${captions.id}/download`)).status()
+  ).toBe(404)
+  await page
+    .getByRole("combobox", { name: "Język interfejsu" })
+    .selectOption("en")
+  await page.goto(sessionURL)
+  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible()
+  await expect(page.getByText(/Material deleted/)).toBeVisible()
+  await expect(
+    page.getByRole("link", { name: "Return to library", exact: true }).first()
+  ).toHaveAttribute("href", "#library")
+  await page
+    .getByRole("button", { name: "Review difficult cards", exact: true })
+    .click()
+  await expect(page).toHaveURL(/#study\/\d+$/)
+  await expect(page.getByRole("button", { name: /Nil/ })).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1
+    )
+  ).toBe(true)
+})

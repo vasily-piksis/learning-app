@@ -1205,3 +1205,71 @@ test("changed deletion preview requires a new confirmation with fresh counts", a
     ).not.toBeInTheDocument()
   )
 })
+
+test("subject deletion shows every descendant and returns to the subject list", async () => {
+  window.location.hash = "#library/subject/101"
+  let deleted = false
+  server({
+    "GET /api/auth/me": user,
+    "GET /api/subjects": () =>
+      deleted
+        ? [{ id: 102, name: "Биология", topic_count: 1 }]
+        : [
+            { id: 101, name: "Тестовый предмет", topic_count: 2 },
+            { id: 102, name: "Биология", topic_count: 1 },
+          ],
+    "GET /api/topics": () =>
+      deleted
+        ? []
+        : [
+            {
+              id: 103,
+              subject_id: 101,
+              name: "Тестовая тема",
+              card_count: 4,
+              document_count: 3,
+            },
+          ],
+    "GET /api/subjects/101/deletion": {
+      topic_count: 2,
+      document_count: 3,
+      card_count: 4,
+      revision: "reviewed",
+    },
+    "DELETE /api/subjects/101": (init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({ revision: "reviewed" })
+      deleted = true
+      return { deleted: true }
+    },
+  })
+  render(<App />)
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Удалить предмет", exact: true })
+  )
+  expect(
+    await screen.findByText("Тем будет удалено: 2.", { exact: true })
+  ).toBeVisible()
+  expect(
+    screen.getByText(/Материалов будет удалено: 3. Вопросов будет удалено: 4./)
+  ).toBeVisible()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Отмена", exact: true })
+  )
+  expect(
+    screen.getByRole("heading", { name: "Тестовый предмет" })
+  ).toBeVisible()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Удалить предмет", exact: true })
+  )
+  await screen.findByText("Тем будет удалено: 2.", { exact: true })
+  await userEvent.click(
+    screen.getByRole("button", { name: "Удалить", exact: true })
+  )
+  await waitFor(() => expect(window.location.hash).toBe("#library"))
+  expect(
+    await screen.findByRole("link", { name: "Биология", exact: true })
+  ).toBeVisible()
+  expect(
+    screen.queryByText("Тестовый предмет", { exact: true })
+  ).not.toBeInTheDocument()
+})

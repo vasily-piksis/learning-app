@@ -10,6 +10,7 @@ import {
 import {
   PageHeading,
   NameDialog,
+  DeleteDialog,
   Loading,
   ErrorNotice,
   Blank,
@@ -60,6 +61,15 @@ export default function Library({
         )}
         {selected ? (
           <div className="flex flex-wrap gap-2">
+            <DeleteDialog
+              path={`/subjects/${selected.id}`}
+              name={selected.name}
+              label={t("Удалить предмет")}
+              onDeleted={() => {
+                refresh()
+                navigate("library")
+              }}
+            />
             <StudySelection
               key={selected.id}
               topics={visible}

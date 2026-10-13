@@ -275,6 +275,15 @@ def run_job(database, ai, identifier):
             if kind in {"ingest", "youtube"}:
                 db.get(Document, payload["document_id"]).status = "failed"
 
+    finally:
+        # Caption-cache writes can finish after deletion cancelled an in-flight download.
+        # Check outside the job transaction before cleaning any unreferenced transcript.
+        if kind == "youtube":
+            with database.session() as db:
+                cancelled = db.get(Job, identifier).status == "cancelled"
+            if cancelled:
+                cleanup_deleted_files(database)
+
 
 def worker_loop(database, ai, stop: threading.Event):
     while not stop.is_set():

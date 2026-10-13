@@ -63,7 +63,10 @@ def topic_data(db, value):
 def subjects(request: Request):
     with request.app.state.db.session() as db:
         return [
-            subject_data(db, value) for value in db.scalars(select(Subject).order_by(Subject.id))
+            subject_data(db, value)
+            for value in db.scalars(
+                select(Subject).where(Subject.deleted.is_(False)).order_by(Subject.id)
+            )
         ]
 
 
@@ -102,6 +105,7 @@ def topic(identifier: int, request: Request):
 @router.post("/topics")
 def new_topic(body: TopicBody, request: Request):
     with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
         get_or_404(db, Subject, body.subject_id)
         value = Topic(name=body.name, subject_id=body.subject_id)
         db.add(value)

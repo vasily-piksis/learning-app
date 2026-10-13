@@ -442,6 +442,7 @@ export function DeleteDialog({
   const [counts, setCounts] = useState<{
     card_count: number
     document_count: number
+    topic_count?: number
     revision?: string
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -482,6 +483,13 @@ export function DeleteDialog({
               {t("Это действие нельзя отменить. История занятий сохранится.")}
             </DialogDescription>
           </DialogHeader>
+          {counts?.topic_count !== undefined && (
+            <p>
+              {t("Тем будет удалено: {topics}.", {
+                topics: counts.topic_count,
+              })}
+            </p>
+          )}
           {counts && (
             <p>
               {t(

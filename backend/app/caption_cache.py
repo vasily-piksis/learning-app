@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 import uuid
 from threading import RLock
 
@@ -76,3 +77,38 @@ def cached(settings, key, schema, load, legacy_keys=()):
         finally:
             temporary.unlink(missing_ok=True)
         return value
+
+
+def remove_transcript(settings, video, language):
+    if (
+        not isinstance(video, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video)
+        or not isinstance(language, str)
+        or not re.fullmatch(LANGUAGE, language)
+    ):
+        return
+    root = settings.data_dir / "youtube-cache"
+    with lock:
+        for key in (
+            f"youtube:transcript:{video}:{language}",
+            f"oxylabs:transcript:{video}:{language}",
+        ):
+            stem = hashlib.sha256(key.encode()).hexdigest()
+            (root / f"{stem}.json").unlink(missing_ok=True)
+            for temporary in root.glob(f"{stem}.*.tmp"):
+                temporary.unlink(missing_ok=True)
+
+
+def retained_languages(settings):
+    """Recover language keys from caches written before deleted rows kept provenance."""
+    languages = set()
+    with lock:
+        for path in (settings.data_dir / "youtube-cache").glob("*.json"):
+            try:
+                value = json.loads(path.read_text())
+            except (ValueError, OSError):
+                continue
+            language = value.get("language") if isinstance(value, dict) else None
+            if isinstance(language, str) and re.fullmatch(LANGUAGE, language):
+                languages.add(language)
+    return languages

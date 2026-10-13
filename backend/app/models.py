@@ -41,6 +41,7 @@ class AuthSession(Base):
 
 class Subject(Base):
     __tablename__ = "subjects"
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     created: Mapped[datetime] = mapped_column(default=now)
