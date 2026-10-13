@@ -12,7 +12,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 
 from .models import AuthSession, User, now
 
@@ -56,6 +56,32 @@ def user_payload(user, auth):
 class Login(BaseModel):
     username: str = Field(max_length=80)
     password: str = Field(max_length=1024)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024, repr=False)
+    new_password: str = Field(min_length=10, max_length=1024, repr=False)
+
+
+def new_auth_session(db, user, request, response):
+    token = secrets.token_urlsafe(32)
+    auth = AuthSession(
+        id=token_hash(token),
+        user_id=user.id,
+        csrf=secrets.token_urlsafe(32),
+        expires=now() + timedelta(days=30),
+    )
+    db.add(auth)
+    response.set_cookie(
+        "study_session",
+        token,
+        max_age=30 * 86400,
+        httponly=True,
+        secure=request.app.state.settings.cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    return user_payload(user, auth)
 
 
 @dataclass
@@ -125,6 +151,9 @@ def login(body: Login, request: Request, response: Response):
         request.app.state.login_limiter.attempt(request.client.host),
         request.app.state.db.session() as db,
     ):
+        # Serialize password verification with changes, so an old-password login
+        # cannot create a new session after that password has been replaced.
+        db.execute(text("BEGIN IMMEDIATE"))
         user = db.scalar(select(User).where(User.username == body.username.strip().lower()))
         try:
             valid = hasher.verify(user.password_hash if user else dummy_hash, body.password)
@@ -137,24 +166,29 @@ def login(body: Login, request: Request, response: Response):
             previous = db.get(AuthSession, token_hash(old))
             if previous:
                 db.delete(previous)
-        token = secrets.token_urlsafe(32)
-        auth = AuthSession(
-            id=token_hash(token),
-            user_id=user.id,
-            csrf=secrets.token_urlsafe(32),
-            expires=now() + timedelta(days=30),
-        )
-        db.add(auth)
-        response.set_cookie(
-            "study_session",
-            token,
-            max_age=30 * 86400,
-            httponly=True,
-            secure=request.app.state.settings.cookie_secure,
-            samesite="lax",
-            path="/",
-        )
-        return user_payload(user, auth)
+        return new_auth_session(db, user, request, response)
+
+
+@router.post("/password")
+def change_password(body: PasswordChange, request: Request, response: Response):
+    identifier = require_user(request).id
+    with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
+        auth = db.get(AuthSession, token_hash(request.cookies.get("study_session", "")))
+        user = db.get(User, identifier)
+        if not auth or auth.user_id != identifier or auth.expires <= now() or not user.active:
+            raise HTTPException(401, "Войдите в аккаунт")
+        # A session revoked while waiting for the lock is not a password failure.
+        with request.app.state.password_limiter.attempt(identifier):
+            try:
+                valid = hasher.verify(user.password_hash, body.current_password)
+            except VerificationError:
+                valid = False
+            if not valid:
+                raise HTTPException(401, "Неверный текущий пароль")
+            user.password_hash = hasher.hash(body.new_password)
+            db.execute(delete(AuthSession).where(AuthSession.user_id == identifier))
+            return new_auth_session(db, user, request, response)
 
 
 @router.get("/me")

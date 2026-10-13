@@ -26,3 +26,7 @@ frontend/blob-report/
 frontend/coverage/
 .superpowers/
 .DS_Store
+/compose.override.yaml
+/ops/
+/incoming/
+/DEPLOYMENT.txt

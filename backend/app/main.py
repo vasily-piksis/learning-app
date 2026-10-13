@@ -3,6 +3,7 @@ import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -53,6 +54,15 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
     app.state.db = db
     app.state.ai = ai or AI(settings)
     app.state.login_limiter = LoginLimiter()
+    app.state.password_limiter = LoginLimiter()
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, error):
+        # Validation responses must not echo submitted passwords or other input.
+        return JSONResponse(
+            {"detail": [{k: e[k] for k in ("loc", "msg", "type")} for e in error.errors()]},
+            status_code=422,
+        )
 
     @app.middleware("http")
     async def same_origin(request: Request, call_next):

@@ -17,6 +17,7 @@ COPY backend/app ./app
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini ./alembic.ini
 COPY --from=frontend /build/dist ./static
+RUN chmod -R a+rX /app/app /app/alembic /app/static && chmod a+r /app/alembic.ini
 USER study
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"

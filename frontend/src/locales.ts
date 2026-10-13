@@ -1,4 +1,36 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  Профиль: { pl: "Profil", en: "Profile" },
+  "Смена пароля для аккаунта «{name}».": {
+    pl: "Zmiana hasła do konta „{name}”.",
+    en: "Change the password for “{name}”.",
+  },
+  "Текущий пароль": { pl: "Obecne hasło", en: "Current password" },
+  "Новый пароль": { pl: "Nowe hasło", en: "New password" },
+  "Повторите новый пароль": {
+    pl: "Powtórz nowe hasło",
+    en: "Confirm new password",
+  },
+  "Минимум 10 символов.": {
+    pl: "Co najmniej 10 znaków.",
+    en: "At least 10 characters.",
+  },
+  "Новый пароль должен содержать минимум 10 символов": {
+    pl: "Nowe hasło musi mieć co najmniej 10 znaków",
+    en: "The new password must have at least 10 characters",
+  },
+  "Пароли не совпадают": {
+    pl: "Hasła nie są identyczne",
+    en: "Passwords do not match",
+  },
+  "Неверный текущий пароль": {
+    pl: "Nieprawidłowe obecne hasło",
+    en: "Incorrect current password",
+  },
+  "Сменить пароль": { pl: "Zmień hasło", en: "Change password" },
+  "Пароль изменён. Остальные устройства вышли из аккаунта.": {
+    pl: "Hasło zostało zmienione. Pozostałe urządzenia zostały wylogowane.",
+    en: "Password changed. Other devices have been signed out.",
+  },
   "Выбрать занятия": { pl: "Wybierz sesje", en: "Select sessions" },
   "Завершить выбор": { pl: "Zakończ wybieranie", en: "Done selecting" },
   "Выбрать все показанные": {

@@ -20,6 +20,7 @@ import Topic from "@/features/Topic"
 import { Preparation } from "@/features/StartStudy"
 import Study from "@/features/Study"
 import History from "@/features/History"
+import Profile from "@/features/Profile"
 
 function useRoute() {
   const [hash, setHash] = useState(
@@ -140,10 +141,13 @@ export default function App() {
         </nav>
         <div className="account">
           <LanguageSwitcher />
-          <span className="account-avatar" aria-hidden="true">
-            {user.display_name[0]}
-          </span>
-          <span className="account-name">{user.display_name}</span>
+          <Profile
+            user={user}
+            onChanged={(value) => {
+              setUser(value)
+              setCsrf(value.csrf_token)
+            }}
+          />
           <Button
             size="icon"
             variant="ghost"

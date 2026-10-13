@@ -66,6 +66,10 @@ def browser_app():
     instance = create_app(settings, ai=BrowserAI())
     create_user(instance.state.db, "child", "Browser Child", "browser-child-password")
     create_user(instance.state.db, "parent", "Browser Parent", "browser-parent-password")
+    for device in ("desktop", "mobile"):
+        create_user(
+            instance.state.db, f"profile_{device}", "Browser Profile", "browser-profile-password"
+        )
     return instance
 
 
