@@ -1,5 +1,7 @@
 """One-question regeneration with a private, explicitly applied candidate."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field, StrictInt, model_validator
 from sqlalchemy import delete, select, text
@@ -15,7 +17,7 @@ from .jobs import (
     request_replay,
 )
 from .models import Card, CardSource, Document, Job
-from .schemas import GeneratedCard, Strict
+from .schemas import GeneratedCard, ImageUpdate, Strict
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
@@ -41,6 +43,7 @@ class Regenerated(Strict):
 
 class ApplyBody(Strict):
     candidate: GeneratedCard
+    image_updates: dict[Literal["question", "answer"], ImageUpdate] | None = None
 
 
 def owned(db, identifier, user_id):
@@ -226,6 +229,9 @@ def apply(identifier: int, body: ApplyBody, request: Request):
             validate_candidate(db, job.payload, body.candidate)
         except ValueError as e:
             raise HTTPException(409, str(e)) from e
+        from .question_images import apply_updates, cleanup_image_assets
+
+        apply_updates(db, card, body.image_updates, user.id)
         candidate = body.candidate
         for field in (
             "question",
@@ -252,7 +258,9 @@ def apply(identifier: int, body: ApplyBody, request: Request):
             "applied_fingerprint": signature,
             "applied_result": applied,
         }
-        return applied
+        result = applied
+    cleanup_image_assets(request.app.state.db)
+    return result
 
 
 @router.post("/jobs/{identifier}/discard-regeneration")

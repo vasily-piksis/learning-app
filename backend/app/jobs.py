@@ -111,7 +111,10 @@ def job_data(job, db=None):
 
 
 def recover_jobs(database):
+    from .question_images import cleanup_image_assets
+
     cleanup_deleted_files(database)
+    cleanup_image_assets(database, recover_writing=True)
     with database.session() as db:
         for job in db.scalars(select(Job).where(Job.status == "running")):
             job.status = "failed"
@@ -581,7 +584,10 @@ def card_data(db, card, include_text=False):
         page = db.get(SourcePage, ref.page_id)
         document = db.get(Document, page.document_id)
         sources.append(source_data(document, page, include_text))
+    from .question_images import library_images
+
     return {
+        "images": library_images(db, card.id),
         "id": card.id,
         "job_id": card.job_id,
         "topic_id": card.topic_id,
@@ -628,7 +634,7 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
         if card.version != body.version:
             raise HTTPException(409, "Карточка изменена в другой вкладке. Обновите список")
         original = card_data(db, card)
-        supplied = body.model_dump(exclude={"version"}, exclude_unset=True)
+        supplied = body.model_dump(exclude={"version", "image_updates"}, exclude_unset=True)
         exercise = supplied.get("exercise", original["exercise"])
         try:
             validated = GeneratedCard.model_validate(
@@ -663,12 +669,17 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
                 raise ValueError("Решение должно соответствовать упражнению")
         except (ValidationError, ValueError):
             raise HTTPException(422, "Проверьте вопрос, ответ и параметры задания") from None
+        from .question_images import apply_updates, cleanup_image_assets
+
+        apply_updates(db, card, body.image_updates, require_user(request).id)
         card.question, card.answer = validated.question, validated.answer
         card.options, card.correct_index = validated.options, validated.correct_index
         card.correct_indices = validated.correct_indices
         card.exercise = validated.exercise.model_dump() if validated.exercise else None
         card.version += 1
-        return card_data(db, card)
+        result = card_data(db, card)
+    cleanup_image_assets(request.app.state.db)
+    return result
 
 
 @router.post("/cards/save")

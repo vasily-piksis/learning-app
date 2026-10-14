@@ -174,3 +174,56 @@ class Explanation(Base):
     question: Mapped[str] = mapped_column(Text)
     result: Mapped[dict] = mapped_column(JSON)
     created: Mapped[datetime] = mapped_column(default=now)
+
+
+class ImageAsset(Base):
+    __tablename__ = "image_assets"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(80), unique=True)
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    mime: Mapped[str] = mapped_column(String(40), default="image/webp")
+    origin: Mapped[str] = mapped_column(String(20), default="upload")
+    stage: Mapped[str] = mapped_column(String(20), default="writing", index=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    target_card_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cards.id"), nullable=True, index=True
+    )
+    target_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    slot: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    created: Mapped[datetime] = mapped_column(default=now)
+    updated: Mapped[datetime] = mapped_column(default=now, onupdate=now)
+
+
+class CardImage(Base):
+    __tablename__ = "card_images"
+    __table_args__ = (UniqueConstraint("card_id", "slot"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    card_id: Mapped[int] = mapped_column(ForeignKey("cards.id"), index=True)
+    asset_id: Mapped[str] = mapped_column(ForeignKey("image_assets.id"), index=True)
+    slot: Mapped[str] = mapped_column(String(20))
+    alt: Mapped[str] = mapped_column(String(500), default="")
+
+
+class SessionImage(Base):
+    __tablename__ = "session_images"
+    __table_args__ = (UniqueConstraint("session_card_id", "slot"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_card_id: Mapped[int] = mapped_column(
+        ForeignKey("session_cards.id", ondelete="CASCADE"), index=True
+    )
+    asset_id: Mapped[str] = mapped_column(ForeignKey("image_assets.id"), index=True)
+    slot: Mapped[str] = mapped_column(String(20))
+    alt: Mapped[str] = mapped_column(String(500), default="")
+
+
+class JobImage(Base):
+    __tablename__ = "job_images"
+    __table_args__ = (UniqueConstraint("job_id", "asset_id", "role"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    asset_id: Mapped[str] = mapped_column(ForeignKey("image_assets.id"), index=True)
+    role: Mapped[str] = mapped_column(String(20), default="candidate")

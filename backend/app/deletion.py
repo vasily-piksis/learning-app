@@ -178,6 +178,9 @@ def remove(db, database, documents, cards, topic_id=None, topic_ids=(), subject_
                 "Материал или вопрос удалён. Задача отменена",
                 now(),
             )
+    from .question_images import cleanup_image_assets, invalidate_card_images
+
+    invalidate_card_images(db, card_ids)
     db.execute(delete(CardSource).where(CardSource.card_id.in_(card_ids)))
     for card in cards:
         card.status = "deleted"
@@ -202,6 +205,7 @@ def remove(db, database, documents, cards, topic_id=None, topic_ids=(), subject_
     db.flush()
     # Commit cancellation before removing files: workers must observe the tombstone first.
     db.commit()
+    cleanup_image_assets(database)
     cleanup = documents
     if subject_id is not None:
         all_topics = select(Topic.id).where(Topic.subject_id == subject_id)

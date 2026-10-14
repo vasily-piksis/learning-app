@@ -36,6 +36,11 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ImageUpdate(Strict):
+    asset_id: str | None
+    alt: str = Field(default="", max_length=500)
+
+
 class SourceRef(Strict):
     document_id: int
     page: int
@@ -180,6 +185,7 @@ class GenerateBody(Strict):
 
 
 class CardEdit(Strict):
+    image_updates: dict[Literal["question", "answer"], ImageUpdate] | None = None
     question: str = Field(min_length=1, max_length=10000)
     answer: str | None = Field(default=None, min_length=1, max_length=10000)
     options: list[str] = Field(default_factory=list)

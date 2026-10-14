@@ -83,13 +83,17 @@ def at_position(db, session_id, position):
     return value
 
 
-def public_card(snapshot, revealed=False, db=None):
+def public_card(snapshot, revealed=False, db=None, session_card=None):
     value = exercises.public_exercise(snapshot, revealed)
     if db is not None:
         value["sources"] = available_sources(db, value["sources"])
     value["multiple_answers"] = len(correct_indices(snapshot)) > 1
     if revealed:
         value["correct_indices"] = correct_indices(snapshot)
+    if db is not None and session_card is not None:
+        from .question_images import session_images
+
+        value["images"] = session_images(db, session_card, revealed)
     return value
 
 
@@ -154,7 +158,7 @@ def session_data(db, session, full=False):
             result["review"].append(
                 {
                     "position": answered_card.position,
-                    "card": public_card(answered_card.snapshot, True, db),
+                    "card": public_card(answered_card.snapshot, True, db, answered_card),
                     "correct": attempt.correct,
                     "submission": stored_submission(attempt, answered_card.snapshot),
                     "choice": attempt.value.get(
@@ -169,7 +173,7 @@ def session_data(db, session, full=False):
         if session.position < count:
             current = at_position(db, session.id, session.position)
             result["card"] = {
-                **public_card(current.snapshot, current.revealed, db),
+                **public_card(current.snapshot, current.revealed, db, current),
                 "session_card_id": current.id,
                 "revealed": current.revealed,
             }
@@ -181,11 +185,22 @@ def new_session(db, user_id, topics, mode, snapshots):
     value = StudySession(user_id=user_id, topic_ids=topics, mode=mode)
     db.add(value)
     db.flush()
+    from .question_images import copy_images
+
     for position, snapshot in enumerate(snapshots):
-        db.add(
-            SessionCard(
-                session_id=value.id, position=position, snapshot=exercises.build_snapshot(snapshot)
-            )
+        source_session = snapshot.get("_image_source_session_card_id")
+        clean = {
+            k: v
+            for k, v in snapshot.items()
+            if k not in {"images", "_image_source_session_card_id"}
+        }
+        card = SessionCard(
+            session_id=value.id, position=position, snapshot=exercises.build_snapshot(clean)
+        )
+        db.add(card)
+        db.flush()
+        copy_images(
+            db, card, source_session_card_id=source_session, source_card_id=snapshot.get("id")
         )
     db.flush()
     return session_data(db, value, full=True)
@@ -330,7 +345,11 @@ def delete_history(body: DeleteHistoryBody, request: Request):
         for session in sessions:
             # Empty tombstones also prevent old browser tabs from reaching reused IDs.
             session.status, session.topic_ids, session.position = "deleted", [], 0
-        return {"deleted_count": len(sessions)}
+        result = {"deleted_count": len(sessions)}
+    from .question_images import cleanup_image_assets
+
+    cleanup_image_assets(request.app.state.db)
+    return result
 
 
 @router.get("/{identifier}")
@@ -362,7 +381,7 @@ def feedback(attempt, card, session_id, db=None):
         "session_id": session_id,
         "position": card.position,
         "correct": attempt.correct,
-        "card": public_card(card.snapshot, True, db),
+        "card": public_card(card.snapshot, True, db, card),
         "next_position": card.position + 1,
         "submission": stored_submission(attempt, card.snapshot),
         **grading_data(attempt),
@@ -433,7 +452,11 @@ def repeat(identifier: int, request: Request):
         if not cards:
             raise HTTPException(422, "Пока нет карточек для повторения")
         return new_session(
-            db, user.id, session.topic_ids, session.mode, [card.snapshot for card in cards]
+            db,
+            user.id,
+            session.topic_ids,
+            session.mode,
+            [{**card.snapshot, "_image_source_session_card_id": card.id} for card in cards],
         )
 
 

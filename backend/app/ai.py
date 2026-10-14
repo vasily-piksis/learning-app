@@ -188,6 +188,7 @@ class AI:
         )
 
     def regenerate(self, card, sources):
+        card = {key: value for key, value in card.items() if key != "images"}
         from .regeneration import Regenerated
 
         return self.parse(
@@ -226,6 +227,7 @@ class AI:
         )
 
     def explain(self, snapshot, question, history):
+        snapshot = {key: value for key, value in snapshot.items() if key != "images"}
         return self.parse(
             ExplanationResult,
             [
