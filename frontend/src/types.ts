@@ -84,7 +84,28 @@ export type Source = {
   start_seconds?: number
   end_seconds?: number
 }
+export type ImageSlot = "question" | "answer"
+export type QuestionImage = {
+  asset_id: string
+  url: string
+  alt: string
+  width: number
+  height: number
+  mime: string
+  origin: "upload" | "generated"
+}
+export type ImageUpdates = Partial<
+  Record<ImageSlot, { asset_id: string | null; alt: string }>
+>
+export type ImageCandidate = QuestionImage & {
+  id: string
+  slot: ImageSlot
+  stage: "draft" | "obsolete"
+  can_apply: boolean
+  target_version: number
+}
 export type Card = {
+  images?: Partial<Record<ImageSlot, QuestionImage>>
   question_type?: QuestionType
   exercise?: FullExercise | PublicExercise | null
   id: number

@@ -17,10 +17,17 @@ import {
   PendingIcon,
   Sources,
 } from "@/components/shared"
-import type { Card, FullExercise, Job, QuestionCandidate } from "@/types"
+import type {
+  Card,
+  FullExercise,
+  Job,
+  QuestionCandidate,
+  ImageUpdates,
+} from "@/types"
 import { exerciseSolution } from "@/lib/exercises"
 import EditQuestion from "./EditQuestion"
 import ExerciseSolution from "./ExerciseSolution"
+import QuestionImages, { QuestionImageView } from "./QuestionImages"
 export default function RegenerateQuestion({
   card,
   onSaved,
@@ -37,12 +44,17 @@ export default function RegenerateQuestion({
     jobId: number
     candidate: QuestionCandidate
   } | null>(null)
+  const [imageUpdates, setImageUpdates] = useState<ImageUpdates>({})
+  const [imageBusy, setImageBusy] = useState(false)
   const request = useRef({
     version: card.version,
     idempotency_key: crypto.randomUUID(),
     another_variant: false,
   })
-  const applyRequest = useRef<{ candidate: QuestionCandidate } | null>(null)
+  const applyRequest = useRef<{
+    candidate: QuestionCandidate
+    image_updates?: ImageUpdates
+  } | null>(null)
   const job = useQuery<Job>(
     jobId ? `/jobs/${jobId}` : null,
     open && jobId ? 1000 : 0
@@ -66,7 +78,10 @@ export default function RegenerateQuestion({
         request.current
       )
       setJobId(result.id)
-      if (another || result.id !== jobId) setEdited(null)
+      if (another || result.id !== jobId) {
+        setEdited(null)
+        setImageUpdates({})
+      }
       applyRequest.current = null
       setLocked(false)
     } catch (e) {
@@ -89,7 +104,7 @@ export default function RegenerateQuestion({
         variant="ghost"
         aria-label={t("Перегенерировать вопрос")}
         onClick={() => void start()}
-        disabled={busy}
+        disabled={busy || imageBusy}
       >
         <RefreshCw data-icon="inline-start" />
         {t("Перегенерировать")}
@@ -97,12 +112,12 @@ export default function RegenerateQuestion({
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          if (!busy) setOpen(next)
+          if (!busy && !imageBusy) setOpen(next)
         }}
       >
         <DialogContent
           className="max-h-[90dvh] overflow-y-auto"
-          showCloseButton={!busy}
+          showCloseButton={!busy && !imageBusy}
         >
           <DialogHeader>
             <DialogTitle>{t("Новый вариант вопроса")}</DialogTitle>
@@ -144,11 +159,13 @@ export default function RegenerateQuestion({
                   {t("Исходный вопрос")}
                 </p>
                 <p>{card.question}</p>
+                <QuestionImageView image={card.images?.question} />
+                <QuestionImageView image={card.images?.answer} />
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-sm text-muted-foreground">{t("Кандидат")}</p>
                 <p className="font-medium">{preview.question}</p>
-                <ExerciseSolution card={preview} />
+                <ExerciseSolution card={{ ...preview, images: {} }} />
                 <ol className="mt-3">
                   {preview.options.map((option, index) => (
                     <li key={index}>
@@ -162,10 +179,18 @@ export default function RegenerateQuestion({
               <p className="text-sm text-muted-foreground">
                 {t("Правки кандидата сохраняются при применении.")}
               </p>
+              <QuestionImages
+                card={card}
+                value={imageUpdates}
+                onChange={setImageUpdates}
+                disabled={busy || locked || imageBusy}
+                onBusyChange={setImageBusy}
+              />
               <EditQuestion
                 card={preview}
+                showImages={false}
                 onSaved={() => {}}
-                disabled={busy || locked}
+                disabled={busy || locked || imageBusy}
                 saveLabel={t("Обновить кандидат")}
                 save={async (body) => {
                   const fields = Object.fromEntries(
@@ -185,13 +210,18 @@ export default function RegenerateQuestion({
                 }}
               />
               <Button
-                disabled={busy}
+                disabled={busy || imageBusy}
                 onClick={async () => {
                   setBusy(true)
                   setError(null)
                   setLocked(true)
                   if (!applyRequest.current)
-                    applyRequest.current = { candidate }
+                    applyRequest.current = {
+                      candidate,
+                      ...(Object.keys(imageUpdates).length
+                        ? { image_updates: imageUpdates }
+                        : {}),
+                    }
                   try {
                     await api(
                       `/jobs/${jobId}/apply-regeneration`,
@@ -229,14 +259,14 @@ export default function RegenerateQuestion({
               <DialogFooter>
                 <Button
                   variant="outline"
-                  disabled={busy || locked}
+                  disabled={busy || locked || imageBusy}
                   onClick={() => void start(true)}
                 >
                   {t("Другой вариант")}
                 </Button>
                 <Button
                   variant="ghost"
-                  disabled={busy}
+                  disabled={busy || imageBusy}
                   onClick={async () => {
                     setBusy(true)
                     setError(null)

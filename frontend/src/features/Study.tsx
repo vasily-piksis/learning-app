@@ -1,3 +1,4 @@
+import { QuestionImageView } from "./exercises/QuestionImages"
 import ExerciseInput, { completeAnswer } from "./exercises/ExerciseInput"
 import ExerciseSolution from "./exercises/ExerciseSolution"
 import { questionLabel, submissionText } from "@/lib/exercises"
@@ -197,6 +198,7 @@ function Question({
           <CardTitle className="question-title">{shown.question}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
+          <QuestionImageView image={shown.images?.question} />
           {session.mode === "quiz" &&
             (!card.question_type || card.question_type === "choice") && (
               <FieldSet className="quiz-options">
@@ -531,6 +533,7 @@ function ReviewCard({
             )}
           </p>
         )}
+        <QuestionImageView image={item.card.images?.question} />
         <ExerciseSolution card={item.card} />
         <Sources sources={item.card.sources} />
         <Button

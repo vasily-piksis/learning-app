@@ -1,3 +1,4 @@
+import { QuestionImageView } from "./exercises/QuestionImages"
 import { correctIndices } from "@/lib/answers"
 import { questionLabel } from "@/lib/exercises"
 import RegenerateQuestion from "./exercises/RegenerateQuestion"
@@ -58,6 +59,7 @@ export default function Questions({
               <CardTitle>{current.question}</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
+              <QuestionImageView image={current.images?.question} />
               <ExerciseSolution card={current} />
               {current.options.length > 0 && (
                 <ol className="flex flex-col gap-2">

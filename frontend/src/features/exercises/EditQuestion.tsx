@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Pencil } from "lucide-react"
 import { t } from "@/i18n"
 import { api, errorText } from "@/api"
-import type { Card, FullExercise } from "@/types"
+import type { Card, FullExercise, ImageUpdates } from "@/types"
 import { correctIndices } from "@/lib/answers"
 import { exerciseSolution } from "@/lib/exercises"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog"
 import { Sources, ErrorNotice, PendingIcon } from "@/components/shared"
 import ExerciseEditor from "./ExerciseEditor"
+import QuestionImages from "./QuestionImages"
 
 export default function EditQuestion({
   card,
@@ -33,12 +34,14 @@ export default function EditQuestion({
   save,
   saveLabel,
   disabled = false,
+  showImages = true,
 }: {
   card: Card
   onSaved: () => void
   save?: (body: Record<string, unknown>) => Promise<unknown>
   saveLabel?: string
   disabled?: boolean
+  showImages?: boolean
 }) {
   const [open, setOpen] = useState(false),
     [question, setQuestion] = useState(card.question),
@@ -50,6 +53,8 @@ export default function EditQuestion({
     [correct, setCorrect] = useState<number[]>(correctIndices(card)),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null)
+  const [imageUpdates, setImageUpdates] = useState<ImageUpdates>({})
+  const [imageBusy, setImageBusy] = useState(false)
   const specialized = (card.question_type || "choice") !== "choice"
   return (
     <>
@@ -62,6 +67,7 @@ export default function EditQuestion({
           setExercise((card.exercise as FullExercise) || null)
           setOptions(card.options)
           setCorrect(correctIndices(card))
+          setImageUpdates({})
           setError(null)
           setOpen(true)
         }}
@@ -73,7 +79,7 @@ export default function EditQuestion({
       <Dialog
         open={open}
         onOpenChange={(v) => {
-          if (!busy) setOpen(v)
+          if (!busy && !imageBusy) setOpen(v)
         }}
       >
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
@@ -99,6 +105,9 @@ export default function EditQuestion({
                         correct_indices: card.mode === "quiz" ? correct : [],
                       }),
                   version: card.version,
+                  ...(Object.keys(imageUpdates).length
+                    ? { image_updates: imageUpdates }
+                    : {}),
                 }
                 if (save) await save(body)
                 else await api(`/cards/${card.id}`, "PATCH", body)
@@ -127,7 +136,7 @@ export default function EditQuestion({
                     questionType={card.question_type!}
                     value={exercise}
                     onChange={setExercise}
-                    disabled={busy}
+                    disabled={busy || imageBusy}
                   />
                   <Field>
                     <FieldLabel>{t("Полное решение")}</FieldLabel>
@@ -187,6 +196,15 @@ export default function EditQuestion({
                 </FieldSet>
               )}
             </FieldGroup>
+            {showImages && (
+              <QuestionImages
+                card={card}
+                value={imageUpdates}
+                onChange={setImageUpdates}
+                disabled={busy || imageBusy}
+                onBusyChange={setImageBusy}
+              />
+            )}
             <Sources sources={card.sources} />
             <ErrorNotice message={error} />
             <DialogFooter>
@@ -194,13 +212,14 @@ export default function EditQuestion({
                 type="button"
                 variant="outline"
                 onClick={() => setOpen(false)}
-                disabled={busy}
+                disabled={busy || imageBusy}
               >
                 {t("Отмена")}
               </Button>
               <Button
                 disabled={
                   busy ||
+                  imageBusy ||
                   (!specialized && card.mode === "quiz" && !correct.length)
                 }
               >

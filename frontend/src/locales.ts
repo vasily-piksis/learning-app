@@ -1,4 +1,71 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Черновики картинок": { pl: "Szkice obrazków", en: "Image drafts" },
+  "Картинка вопроса": { pl: "Obrazek pytania", en: "Question image" },
+  "Картинка ответа": { pl: "Obrazek odpowiedzi", en: "Answer image" },
+  "Загрузить картинку": { pl: "Prześlij obrazek", en: "Upload image" },
+  "Подпись картинки": { pl: "Opis obrazka", en: "Image description" },
+  "Оставить текущую картинку": {
+    pl: "Zachowaj bieżący obrazek",
+    en: "Keep current image",
+  },
+  "Убрать картинку": { pl: "Usuń obrazek", en: "Remove image" },
+  "Использовать черновик": { pl: "Użyj szkicu", en: "Use draft" },
+  "Удалить черновик": { pl: "Usuń szkic", en: "Discard draft" },
+  "Привязать к текущей версии (бесплатно)": {
+    pl: "Powiąż z bieżącą wersją (bezpłatnie)",
+    en: "Rebase to current version (free)",
+  },
+  "Вопрос изменён; проверь картинку перед новой привязкой.": {
+    pl: "Pytanie się zmieniło; sprawdź obrazek przed ponownym powiązaniem.",
+    en: "Question changed; review the image before rebasing.",
+  },
+  "Загруженные черновики доступны при возвращении. Текст и подписи сохраняются только при сохранении изменений.":
+    {
+      pl: "Przesłane szkice pozostają dostępne. Tekst i opisy są zapisywane dopiero po zapisaniu zmian.",
+      en: "Uploaded drafts remain available. Text and descriptions are saved only when you save changes.",
+    },
+  "Картинки — только иллюстрации. Вопрос и правильный ответ должны быть понятны без картинки. Проверь соответствие картинки тексту самостоятельно.":
+    {
+      pl: "Obrazki służą tylko jako ilustracje. Pytanie i poprawna odpowiedź muszą być zrozumiałe bez obrazka. Samodzielnie sprawdź zgodność obrazka z tekstem.",
+      en: "Images are illustrations only. The question and correct answer must be understandable without the image. Review how the image fits the text yourself.",
+    },
+  "JPEG, PNG или WebP, до 10 MiB и 20 мегапикселей.": {
+    pl: "JPEG, PNG lub WebP, do 10 MiB i 20 megapikseli.",
+    en: "JPEG, PNG or WebP, up to 10 MiB and 20 megapixels.",
+  },
+  "Картинка будет убрана при сохранении.": {
+    pl: "Obrazek zostanie usunięty po zapisaniu.",
+    en: "Image will be removed when you save.",
+  },
+  "Картинка будет заменена при сохранении.": {
+    pl: "Obrazek zostanie zastąpiony po zapisaniu.",
+    en: "Image will be replaced when you save.",
+  },
+  "Текущая картинка сохранится.": {
+    pl: "Bieżący obrazek zostanie zachowany.",
+    en: "Current image will be kept.",
+  },
+  "Показать ещё черновики": {
+    pl: "Pokaż więcej szkiców",
+    en: "Load more drafts",
+  },
+  "Создано ИИ": { pl: "Utworzono przez AI", en: "Created by AI" },
+  "Загрузи статичную картинку JPEG, PNG или WebP": {
+    pl: "Prześlij statyczny obrazek JPEG, PNG lub WebP",
+    en: "Upload a static JPEG, PNG or WebP image",
+  },
+  "Картинка должна быть не больше 10 MiB": {
+    pl: "Obrazek nie może przekraczać 10 MiB",
+    en: "Image must not exceed 10 MiB",
+  },
+  "Картинка должна быть не больше 20 мегапикселей": {
+    pl: "Obrazek nie może przekraczać 20 megapikseli",
+    en: "Image must not exceed 20 megapixels",
+  },
+  "Вопрос изменён; проверь картинку и обнови привязку": {
+    pl: "Pytanie się zmieniło; sprawdź obrazek i zaktualizuj powiązanie",
+    en: "The question changed; review the image and update its binding",
+  },
   "Перегенерировать вопрос": {
     pl: "Wygeneruj pytanie ponownie",
     en: "Regenerate question",

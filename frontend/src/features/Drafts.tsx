@@ -1,3 +1,4 @@
+import { QuestionImageView } from "./exercises/QuestionImages"
 import { correctIndices } from "@/lib/answers"
 import { questionLabel } from "@/lib/exercises"
 import RegenerateQuestion from "./exercises/RegenerateQuestion"
@@ -90,6 +91,7 @@ export default function Drafts({ job }: { job: Job }) {
               </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
+              <QuestionImageView image={card.images?.question} />
               <ExerciseSolution card={card} />
               {card.mode === "quiz" && (
                 <ol className="flex flex-col gap-2">

@@ -306,3 +306,28 @@ def test_upload_failure_cannot_discard_another_inflight_writing_asset(client, ap
         upload(client, card)
     with app.state.db.session() as db:
         assert db.get(ImageAsset, other).stage == "writing"
+
+
+def test_regeneration_and_explanation_adapter_inputs_exclude_illustrations(client, app):
+    from app.jobs import run_job
+    from test_regeneration import fixture, request
+
+    topic, card, _, calls = fixture(client, app)
+    asset = candidate(client, card)
+    updated = save(client, card, {"question": {"asset_id": asset["id"], "alt": "private alt"}})
+    assert updated.status_code == 200
+    card = updated.json()
+    job = request(client, card).json()
+    run_job(app.state.db, app.state.ai, job["id"])
+    assert len(calls) == 1
+    snapshot, sources = calls[0]
+    assert "images" not in snapshot
+    assert all("asset_id" not in source for source in sources)
+    session = client.post("/api/study", json={"topic_ids": [topic], "mode": "flashcard"}).json()
+    client.post(f"/api/study/{session['id']}/reveal", json={"position": 0})
+    explanation = client.post(
+        f"/api/study/{session['id']}/explain", json={"position": 0, "question": "Why?"}
+    ).json()
+    run_job(app.state.db, app.state.ai, explanation["id"])
+    assert "images" not in app.state.ai.inputs[-1][0]
+    assert all("asset_id" not in source for source in app.state.ai.inputs[-1][0]["sources"])

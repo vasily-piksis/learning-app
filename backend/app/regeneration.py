@@ -128,6 +128,8 @@ def start(identifier: int, body: RegenerateBody, request: Request):
         if not snapshot["sources"] or not any(s["text"].strip() for s in snapshot["sources"]):
             raise HTTPException(422, "Для регенерации нужны источники")
         current_fingerprint = fingerprint(snapshot)
+        # Illustrations affect version/scope, but are never model evidence.
+        snapshot.pop("images", None)
         for active in db.scalars(
             select(Job)
             .where(

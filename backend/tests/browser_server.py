@@ -90,7 +90,14 @@ class BrowserAI(FixtureAI):
             ],
         )
 
+    def explain(self, snapshot, question, history):
+        assert "images" not in snapshot
+        assert all("asset_id" not in source for source in snapshot["sources"])
+        return super().explain(snapshot, question, history)
+
     def regenerate(self, card, sources):
+        assert "images" not in card
+        assert all("asset_id" not in source for source in sources)
         from app.regeneration import Regenerated
         from app.schemas import GeneratedCard, SourceRef
 
