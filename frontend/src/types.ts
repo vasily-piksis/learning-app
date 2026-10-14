@@ -104,6 +104,19 @@ export type Card = {
   language?: string | null
   target_language?: string | null
 }
+export type QuestionCandidate = {
+  topic_id: number
+  question_type: QuestionType
+  question: string
+  answer: string
+  mode: Mode
+  options: string[]
+  correct_index: number | null
+  correct_indices: number[]
+  sources: { document_id: number; page: number }[]
+  language: string | null
+  exercise: FullExercise | null
+}
 export type Job = {
   id: number
   kind: string
@@ -119,6 +132,12 @@ export type Job = {
     example?: string | null
     sources?: Source[]
     unsupported_types?: { question_type: QuestionType; reason: string }[]
+    candidate?: QuestionCandidate | null
+    card_id?: number
+    base_version?: number
+    insufficient_reason?: string | null
+    applied_version?: number
+    applied_result?: Card
     candidates?: {
       card_id: number
       version: number

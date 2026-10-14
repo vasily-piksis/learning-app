@@ -256,6 +256,11 @@ def run_job(database, ai, identifier):
         job = db.get(Job, identifier)
         kind, payload, user_id = job.kind, job.payload, job.user_id
     try:
+        if kind == "regenerate":
+            from .regeneration import run_regeneration
+
+            run_regeneration(database, ai, payload, identifier)
+            return
         if kind == "ingest":
             result = ingest(database, ai, payload)
         elif kind == "youtube":
@@ -423,7 +428,7 @@ def job(identifier: int, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         value = get_or_404(db, Job, identifier)
-        if value.kind in {"explain", "prepare_quiz"} and value.user_id != user.id:
+        if value.kind in {"explain", "prepare_quiz", "regenerate"} and value.user_id != user.id:
             raise HTTPException(404, "Не найдено")
         return job_data(value, db)
 
@@ -434,10 +439,17 @@ def retry(identifier: int, request: Request):
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         value = get_or_404(db, Job, identifier)
-        if value.kind in {"explain", "prepare_quiz"} and value.user_id != user.id:
+        if value.kind in {"explain", "prepare_quiz", "regenerate"} and value.user_id != user.id:
             raise HTTPException(404, "Не найдено")
         if value.status != "failed":
             raise HTTPException(409, "Повторить можно только неудачную задачу")
+        if value.kind == "regenerate":
+            from .regeneration import check_scope
+
+            try:
+                check_scope(db, value.payload)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
         if value.kind == "prepare_quiz":
             try:
                 validate_preparation(db, value.payload)

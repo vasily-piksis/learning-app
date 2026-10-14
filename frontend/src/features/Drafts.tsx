@@ -1,5 +1,6 @@
 import { correctIndices } from "@/lib/answers"
 import { questionLabel } from "@/lib/exercises"
+import RegenerateQuestion from "./exercises/RegenerateQuestion"
 import ExerciseSolution from "./exercises/ExerciseSolution"
 import { t, systemMessage } from "@/i18n"
 import { useState } from "react"
@@ -102,6 +103,7 @@ export default function Drafts({ job }: { job: Job }) {
             </CardContent>
             <CardFooter>
               <EditCard card={card} onSaved={cards.refetch} />
+              <RegenerateQuestion card={card} onSaved={cards.refetch} />
               <DeleteDialog
                 path={`/cards/${card.id}`}
                 name={card.question}

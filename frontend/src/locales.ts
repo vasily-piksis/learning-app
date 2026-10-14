@@ -1,4 +1,79 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Перегенерировать вопрос": {
+    pl: "Wygeneruj pytanie ponownie",
+    en: "Regenerate question",
+  },
+  Перегенерировать: { pl: "Wygeneruj ponownie", en: "Regenerate" },
+  "Новый вариант вопроса": {
+    pl: "Nowa wersja pytania",
+    en: "New question variant",
+  },
+  "Модель готовит один вопрос. Исходный вопрос сохранится до применения варианта.":
+    {
+      pl: "Model przygotuje jedno pytanie. Oryginalne pytanie pozostanie bez zmian do zastosowania nowej wersji.",
+      en: "The model prepares one question. The original is kept until you apply the variant.",
+    },
+  "Вариант применён": {
+    pl: "Nowa wersja została zastosowana",
+    en: "Variant applied",
+  },
+  "Обновить вопрос": { pl: "Odśwież pytanie", en: "Refresh question" },
+  "Исходный вопрос": { pl: "Oryginalne pytanie", en: "Original question" },
+  Кандидат: { pl: "Proponowana wersja", en: "Candidate" },
+  "Применить вариант": { pl: "Zastosuj nową wersję", en: "Apply variant" },
+  "Вариант отклонён": { pl: "Nowa wersja odrzucona", en: "Variant discarded" },
+  "Другой вариант": { pl: "Inna wersja", en: "Another variant" },
+  "Отклонить вариант": { pl: "Odrzuć nową wersję", en: "Discard variant" },
+  "Вопрос удалён": { pl: "Pytanie zostało usunięte", en: "Question deleted" },
+  "Вопрос изменён. Подготовьте новый вариант": {
+    pl: "Pytanie się zmieniło. Przygotuj nową wersję",
+    en: "The question changed. Prepare a new variant",
+  },
+  "Вопрос или его источники изменились": {
+    pl: "Pytanie lub jego źródła się zmieniły",
+    en: "The question or its sources changed",
+  },
+  "Источники недоступны": {
+    pl: "Źródła są niedostępne",
+    en: "Sources are unavailable",
+  },
+  "Нельзя изменить тему, тип или язык вопроса": {
+    pl: "Nie można zmienić tematu, rodzaju ani języka pytania",
+    en: "You cannot change the topic, type or language of the question",
+  },
+  "Такой вопрос уже существует": {
+    pl: "Takie pytanie już istnieje",
+    en: "This question already exists",
+  },
+  "Вопрос изменён. Обновите страницу": {
+    pl: "Pytanie się zmieniło. Odśwież stronę",
+    en: "The question changed. Refresh the page",
+  },
+  "Для регенерации нужны источники": {
+    pl: "Ponowne wygenerowanie wymaga źródeł",
+    en: "Sources are required for regeneration",
+  },
+  "Источники должны сохранять язык вопроса": {
+    pl: "Źródła muszą być w języku pytania",
+    en: "Sources must preserve the question language",
+  },
+  "Этот вариант уже применён с другим содержимым": {
+    pl: "Ta wersja została już zastosowana z inną treścią",
+    en: "This variant was already applied with different content",
+  },
+  "Вариант недоступен для применения": {
+    pl: "Nie można zastosować tej wersji",
+    en: "The variant is unavailable for applying",
+  },
+  "Применённый вариант нельзя отклонить": {
+    pl: "Nie można odrzucić zastosowanej wersji",
+    en: "An applied variant cannot be discarded",
+  },
+  "Обновить кандидат": { pl: "Zaktualizuj propozycję", en: "Update candidate" },
+  "Правки кандидата сохраняются при применении.": {
+    pl: "Zmiany propozycji są zapisywane podczas jej zastosowania.",
+    en: "Candidate edits are saved when you apply them.",
+  },
   "Способ проверки": { pl: "Sposób sprawdzenia", en: "Practice method" },
   "Смешанная практика": { pl: "Ćwiczenia mieszane", en: "Mixed practice" },
   "Твой ответ": { pl: "Twoja odpowiedź", en: "Your answer" },

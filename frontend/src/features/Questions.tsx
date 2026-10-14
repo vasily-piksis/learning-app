@@ -1,5 +1,6 @@
 import { correctIndices } from "@/lib/answers"
 import { questionLabel } from "@/lib/exercises"
+import RegenerateQuestion from "./exercises/RegenerateQuestion"
 import ExerciseSolution from "./exercises/ExerciseSolution"
 import { t } from "@/i18n"
 import { Button } from "@/components/ui/button"
@@ -72,6 +73,7 @@ export default function Questions({
             </CardContent>
             <CardFooter>
               <EditCard card={current} onSaved={cards.refetch} />
+              <RegenerateQuestion card={current} onSaved={cards.refetch} />
               <DeleteDialog
                 path={`/cards/${current.id}`}
                 name={current.question}

@@ -90,6 +90,31 @@ class BrowserAI(FixtureAI):
             ],
         )
 
+    def regenerate(self, card, sources):
+        from app.regeneration import Regenerated
+        from app.schemas import GeneratedCard, SourceRef
+
+        values = {
+            key: card[key]
+            for key in (
+                "topic_id",
+                "question_type",
+                "question",
+                "answer",
+                "mode",
+                "options",
+                "correct_index",
+                "correct_indices",
+                "language",
+                "exercise",
+            )
+        }
+        values["question"] += " (nowy wariant)"
+        values["sources"] = [
+            SourceRef(document_id=s["document_id"], page=s["page"]) for s in sources
+        ]
+        return Regenerated(card=GeneratedCard(**values), insufficient_reason=None)
+
 
 def subtitle_boundary(method, url, **kwargs):
     """Only external HTTP is replaced; parsing, caching and jobs stay real."""

@@ -396,7 +396,7 @@ modify `backend/app/ai.py`, `jobs.py`, `main.py`, `deletion.py`,
 `frontend/src/types.ts`, `frontend/src/locales.ts`.
 
 **Interfaces:**
-- `POST /api/cards/{id}/regenerate {version, idempotency_key}` → Job.kind=regenerate,
+- `POST /api/cards/{id}/regenerate {version, idempotency_key, another_variant?}` → Job.kind=regenerate,
   payload={card_id, base_version, immutable source/question/type/language snapshot}.
 - `AI.regenerate(card, sources)` → typed один GeneratedCard или
   typed причина недостаточности; не список новых вопросов темы.

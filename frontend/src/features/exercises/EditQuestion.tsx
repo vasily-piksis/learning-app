@@ -30,9 +30,15 @@ import ExerciseEditor from "./ExerciseEditor"
 export default function EditQuestion({
   card,
   onSaved,
+  save,
+  saveLabel,
+  disabled = false,
 }: {
   card: Card
   onSaved: () => void
+  save?: (body: Record<string, unknown>) => Promise<unknown>
+  saveLabel?: string
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false),
     [question, setQuestion] = useState(card.question),
@@ -49,6 +55,7 @@ export default function EditQuestion({
     <>
       <Button
         variant="ghost"
+        disabled={disabled}
         onClick={() => {
           setQuestion(card.question)
           setAnswer(card.answer || "")
@@ -82,7 +89,7 @@ export default function EditQuestion({
               e.preventDefault()
               setBusy(true)
               try {
-                await api(`/cards/${card.id}`, "PATCH", {
+                const body = {
                   question,
                   ...(specialized
                     ? { exercise }
@@ -92,7 +99,9 @@ export default function EditQuestion({
                         correct_indices: card.mode === "quiz" ? correct : [],
                       }),
                   version: card.version,
-                })
+                }
+                if (save) await save(body)
+                else await api(`/cards/${card.id}`, "PATCH", body)
                 setOpen(false)
                 onSaved()
               } catch (e) {
@@ -196,7 +205,7 @@ export default function EditQuestion({
                 }
               >
                 {busy && <PendingIcon />}
-                {t("Сохранить изменения")}
+                {saveLabel || t("Сохранить изменения")}
               </Button>
             </DialogFooter>
           </form>

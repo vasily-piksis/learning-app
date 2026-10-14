@@ -143,6 +143,16 @@ def cleanup_deleted_files(database):
 def remove(db, database, documents, cards, topic_id=None, topic_ids=(), subject_id=None):
     removed_topics = set(topic_ids) | ({topic_id} if topic_id is not None else set())
     doc_ids, card_ids = {d.id for d in documents}, {c.id for c in cards}
+    for job in db.scalars(select(Job).where(Job.kind == "regenerate")):
+        if job.payload.get("card_id") in card_ids or removed_topics.intersection(
+            job.payload.get("topic_ids", [])
+        ):
+            job.status, job.result, job.error = "cancelled", None, None
+            job.payload = {
+                k: v
+                for k, v in job.payload.items()
+                if k in {"card_id", "topic_ids", "base_version", "request_keys"}
+            }
     for job in db.scalars(select(Job).where(Job.status.in_(["queued", "running", "failed"]))):
         payload = job.payload
         topics = payload.get("topics", [])
