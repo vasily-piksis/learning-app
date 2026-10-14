@@ -10,11 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog"
-import { ErrorNotice, PendingIcon } from "@/components/shared"
-import { api, errorText, navigate } from "@/api"
-import type { Topic, Subject, StudySession, Job } from "@/types"
+import StartStudy from "./StartStudy"
+import type { Topic, Subject } from "@/types"
 export default function StudySelection({
   topics,
   subjects,
@@ -23,10 +21,7 @@ export default function StudySelection({
   subjects: Subject[]
 }) {
   const [selected, setSelected] = useState<number[]>([])
-  const [mode, setMode] = useState<"flashcard" | "quiz">("flashcard")
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const available = topics.filter((topic) => topic.card_count > 0)
+  const available = topics
   const chosen = selected.filter((id) =>
     available.some((topic) => topic.id === id)
   )
@@ -43,7 +38,7 @@ export default function StudySelection({
           <DialogTitle>{t("Что повторим?")}</DialogTitle>
           <DialogDescription>
             {t(
-              "Выбери одну или несколько тем. Флеш-карты используют все сохранённые вопросы. Тест использует те же вопросы."
+              "Выбери темы и способ проверки. Для каждой темы видны готовые задания и недостающая подготовка."
             )}
           </DialogDescription>
         </DialogHeader>
@@ -56,7 +51,6 @@ export default function StudySelection({
               <Checkbox
                 aria-label={topic.name}
                 checked={selected.includes(topic.id)}
-                disabled={busy}
                 onCheckedChange={(checked) =>
                   setSelected((values) =>
                     checked
@@ -76,57 +70,12 @@ export default function StudySelection({
               </span>
             </label>
           ))}
-          <div
-            className="flex flex-wrap gap-2"
-            role="group"
-            aria-label={t("Формат занятия")}
-          >
-            {(["flashcard", "quiz"] as const).map((value) => (
-              <Button
-                key={value}
-                variant={mode === value ? "secondary" : "outline"}
-                aria-pressed={mode === value}
-                disabled={busy}
-                onClick={() => {
-                  setMode(value)
-                  setError(null)
-                }}
-              >
-                {value === "quiz" ? t("Тест") : t("Флеш-карты")}
-              </Button>
-            ))}
-          </div>
-          <ErrorNotice message={error} />
+          <StartStudy
+            key={chosen.join(",")}
+            topicIds={chosen}
+            topics={available.filter((topic) => chosen.includes(topic.id))}
+          />
         </div>
-        <DialogFooter>
-          <Button
-            disabled={busy || !chosen.length}
-            onClick={async () => {
-              setBusy(true)
-              setError(null)
-              try {
-                const session = await api<
-                  StudySession | { preparation_job: Job }
-                >("/study", "POST", {
-                  topic_ids: chosen,
-                  mode,
-                })
-                navigate(
-                  "preparation_job" in session
-                    ? `prepare/${session.preparation_job.id}`
-                    : `study/${session.id}`
-                )
-              } catch (e) {
-                setError(errorText(e))
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            {busy && <PendingIcon />}
-            {t("Начать занятие")}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

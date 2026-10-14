@@ -283,10 +283,14 @@ test("starts study with only explicitly selected topics and chosen format", asyn
   expect(start).toBeDisabled()
   await userEvent.click(screen.getByRole("checkbox", { name: /Тема 1/ }))
   await userEvent.click(screen.getByRole("checkbox", { name: /Тема 3/ }))
-  await userEvent.click(screen.getByRole("button", { name: "Тест" }))
-  await userEvent.click(start)
+  await selectPractice("Выбор ответа")
+  await userEvent.click(screen.getByRole("button", { name: "Начать занятие" }))
   await waitFor(() =>
-    expect(submitted).toEqual({ topic_ids: [1, 3], mode: "quiz" })
+    expect(submitted).toEqual({
+      topic_ids: [1, 3],
+      mode: "quiz",
+      question_types: ["choice"],
+    })
   )
   expect(await screen.findByText("Ещё один шаг вперёд")).toBeVisible()
 })
@@ -629,7 +633,7 @@ test("saved quiz cards also enable flashcard repetition in the topic", async () 
   })
   render(<App />)
   const repeat = await screen.findByRole("button", {
-    name: "Флеш-карты",
+    name: "Начать занятие",
     exact: true,
   })
   expect(repeat).toBeEnabled()
@@ -673,11 +677,11 @@ test("topic overview separates study from questions and materials", async () => 
   })
   render(<App />)
   expect(
-    await screen.findByRole("button", { name: "Флеш-карты", exact: true })
+    await screen.findByRole("button", { name: "Начать занятие", exact: true })
   ).toBeEnabled()
   expect(
-    screen.getByRole("button", { name: "Тест", exact: true })
-  ).toBeEnabled()
+    screen.getByRole("combobox", { name: "Способ проверки" })
+  ).toHaveTextContent("Флеш-карты")
   expect(screen.getByRole("link", { name: /Вопросы/ })).toHaveAttribute(
     "href",
     "#library/topic/1/questions"
@@ -806,7 +810,7 @@ test("topic creation selects new materials and generates a bank for both modes",
   expect(screen.queryByText("Материалы для вопросов")).not.toBeInTheDocument()
 })
 
-test("test preparation automatically opens the full topic test after completion", async () => {
+test("completed preparation stays on review screen without starting a study", async () => {
   window.location.hash = "#prepare/12"
   server({
     "GET /api/auth/me": user,
@@ -815,34 +819,22 @@ test("test preparation automatically opens the full topic test after completion"
       kind: "prepare_quiz",
       status: "succeeded",
       topic_ids: [1],
+      result: { candidates: [] },
     },
-    "POST /api/study": (init) => {
-      expect(JSON.parse(String(init?.body))).toEqual({
-        topic_ids: [1],
-        mode: "quiz",
-      })
-      return { id: 15 }
-    },
-    "GET /api/study/15": {
-      id: 15,
-      topic_names: ["Египет"],
-      mode: "quiz",
-      status: "active",
-      count: 1,
-      position: 0,
-      answered: 0,
-      card: {
-        id: 1,
-        question: "Главная река?",
-        options: ["Нил", "Дон"],
-        sources: [],
-      },
-    },
-    "GET /api/study/15/explanations?position=0": [],
-    "GET /api/study/15/explanation-jobs?position=0": [],
+    "GET /api/cards": [],
   })
   render(<App />)
-  expect(await screen.findByRole("button", { name: /Нил/ })).toBeVisible()
+  await screen.findByText(
+    "Проверь варианты и сохрани выбранные. Затем вернись в тему и начни занятие."
+  )
+  expect(window.location.hash).toBe("#prepare/12")
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([path, init]) => path === "/api/study" && init?.method === "POST"
+      )
+  ).toBe(false)
 })
 
 test("failed preparation explicitly restarts with current topic questions", async () => {
@@ -857,13 +849,13 @@ test("failed preparation explicitly restarts with current topic questions", asyn
       topic_ids: [1],
       error: "Вопрос изменён во время подготовки теста. Запустите тест заново",
     },
-    "POST /api/study": (init) => {
+    "POST /api/study/prepare-options": (init) => {
       starts++
       expect(JSON.parse(String(init?.body))).toEqual({
         topic_ids: [1],
-        mode: "quiz",
+        idempotency_key: expect.any(String),
       })
-      return { preparation_job: { id: 13 } }
+      return { id: 13 }
     },
     "GET /api/jobs/13": {
       id: 13,
@@ -874,7 +866,7 @@ test("failed preparation explicitly restarts with current topic questions", asyn
   })
   render(<App />)
   await userEvent.click(
-    await screen.findByRole("button", { name: "Запустить тест заново" })
+    await screen.findByRole("button", { name: "Подготовить заново" })
   )
   await waitFor(() => expect(window.location.hash).toBe("#prepare/13"))
   expect(starts).toBe(1)
@@ -924,11 +916,10 @@ test.each(["quiz", "flashcard"])(
       "GET /api/study/91/explanation-jobs?position=0": [],
     })
     const first = render(<App />)
+    await screen.findByRole("combobox", { name: "Способ проверки" })
+    if (mode === "quiz") await selectPractice("Выбор ответа")
     await userEvent.click(
-      await screen.findByRole("button", {
-        name: mode === "quiz" ? "Тест" : "Флеш-карты",
-        exact: true,
-      })
+      screen.getByRole("button", { name: "Начать занятие", exact: true })
     )
     await screen.findByText("Что произошло?")
     expect(
@@ -941,7 +932,7 @@ test.each(["quiz", "flashcard"])(
     )
     await waitFor(() => expect(window.location.hash).toBe("#library/topic/37"))
     expect(
-      await screen.findByRole("button", { name: "Тест", exact: true })
+      await screen.findByRole("button", { name: "Начать занятие", exact: true })
     ).toBeEnabled()
   }
 )
@@ -1275,3 +1266,12 @@ test("subject deletion shows every descendant and returns to the subject list", 
     screen.queryByText("Тестовый предмет", { exact: true })
   ).not.toBeInTheDocument()
 })
+
+async function selectPractice(label: string) {
+  const select = screen.getByRole("combobox", { name: "Способ проверки" })
+  select.focus()
+  await userEvent.keyboard("{Enter}")
+  await userEvent.click(
+    await screen.findByRole("option", { name: new RegExp(label) })
+  )
+}

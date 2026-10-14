@@ -72,3 +72,23 @@ def test_exercise_size_limits_reject_invalid_question(kind, field, values):
     value[field] = values
     with pytest.raises(ValueError):
         e.validate_exercise(kind, value)
+
+
+def test_gap_complete_solution_includes_every_approved_combination():
+    from app.exercises import solution_text
+
+    assert (
+        solution_text(
+            "gap",
+            {
+                "segments": [{"gap_id": "subject"}, {"text": " "}, {"gap_id": "verb"}],
+                "gaps": [
+                    {"id": "subject", "accepted_answers": ["I", "we"]},
+                    {"id": "verb", "accepted_answers": ["am", "are"]},
+                ],
+                "case_sensitive": False,
+                "accepted_combinations": [["I", "am"], ["we", "are"]],
+            },
+        )
+        == "I am / we are"
+    )

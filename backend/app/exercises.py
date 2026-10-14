@@ -148,16 +148,15 @@ def solution_text(question_type: QuestionType, exercise: dict) -> str:
     if question_type == "written":
         return " / ".join(exercise["accepted_answers"])
     if question_type in {"gap", "ending"}:
-        values = dict(
-            zip(
-                (g["id"] for g in exercise["gaps"]),
-                exercise["accepted_combinations"][0],
-                strict=True,
+        solutions = []
+        for combination in exercise["accepted_combinations"]:
+            values = dict(zip((g["id"] for g in exercise["gaps"]), combination, strict=True))
+            solutions.append(
+                "".join(
+                    s["text"] if "text" in s else values[s["gap_id"]] for s in exercise["segments"]
+                )
             )
-        )
-        return "".join(
-            s["text"] if "text" in s else values[s["gap_id"]] for s in exercise["segments"]
-        )
+        return " / ".join(solutions)
     if question_type == "matching":
         return "\n".join(f"{p['left']} → {p['right']}" for p in exercise["pairs"])
     if question_type == "ordering":
@@ -187,6 +186,8 @@ def build_snapshot(card: dict) -> dict:
     kind = snapshot.get("question_type", "choice")
     value = validate_exercise(kind, original_exercise(snapshot))
     snapshot.update(question_type=kind, snapshot_version=2, exercise=value)
+    if kind != "choice":
+        snapshot["answer"] = solution_text(kind, value)
     if kind == "choice" and snapshot.get("mode") == "quiz":
         from .quiz import correct_indices
 

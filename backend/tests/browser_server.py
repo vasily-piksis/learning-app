@@ -16,14 +16,79 @@ _data = TemporaryDirectory(prefix="learning-browser-")
 
 
 class BrowserAI(FixtureAI):
-    def generate(self, topic_id, sources, mode, count, target_language=None, existing=None):
-        result = super().generate(topic_id, sources, mode, count, target_language, existing)
-        for index, card in enumerate(result.cards):
-            card.question = f"Jak nazywa się rzeka? {len(existing or []) + index + 1}"
-            card.answer = "Nil"
-            card.options = ["Nil", "Wisła", "Odra"] if mode == "quiz" else []
-            card.language = target_language or "pl"
-        return result
+    def generate(
+        self,
+        topic_id,
+        sources,
+        mode,
+        count,
+        target_language=None,
+        existing=None,
+        question_types=None,
+        type_counts=None,
+        practice_goal="content",
+    ):
+        from app.schemas import Generated, GeneratedCard, SourceRef
+
+        kinds = question_types or ["choice"]
+        if kinds == ["choice"]:
+            result = super().generate(topic_id, sources, mode, count, target_language, existing)
+            for index, card in enumerate(result.cards):
+                card.question = f"Jak nazywa się rzeka? {len(existing or []) + index + 1}"
+                card.answer = "Nil"
+                card.options = ["Nil", "Wisła", "Odra"] if mode == "quiz" else []
+                card.language = "pl"
+            return result
+        exercises = {
+            "written": {"accepted_answers": ["Nil"], "case_sensitive": False},
+            "gap": {
+                "segments": [
+                    {"text": "Nil to "},
+                    {"gap_id": "river"},
+                    {"text": " w "},
+                    {"gap_id": "country"},
+                ],
+                "gaps": [
+                    {"id": "river", "accepted_answers": ["rzeka"]},
+                    {"id": "country", "accepted_answers": ["Egipcie"]},
+                ],
+                "accepted_combinations": [["rzeka", "Egipcie"]],
+                "case_sensitive": False,
+            },
+            "ending": {
+                "segments": [{"text": "Nil to rzek"}, {"gap_id": "end"}],
+                "gaps": [{"id": "end", "accepted_answers": ["a"]}],
+                "accepted_combinations": [["a"]],
+                "case_sensitive": False,
+            },
+            "matching": {
+                "pairs": [{"left": "Nil", "right": "rzeka"}, {"left": "Egipt", "right": "kraj"}]
+            },
+            "ordering": {
+                "tokens": ["Nil", "to", "rzeka"],
+                "accepted_orders": [["Nil", "to", "rzeka"]],
+            },
+        }
+        return Generated(
+            insufficient_reason=None,
+            cards=[
+                GeneratedCard(
+                    topic_id=topic_id,
+                    question=f"Zadanie {kind} {i}",
+                    answer="",
+                    mode="quiz",
+                    options=[],
+                    question_type=kind,
+                    exercise=exercises[kind],
+                    sources=[
+                        SourceRef(document_id=sources[0]["document_id"], page=sources[0]["page"])
+                    ],
+                    language="pl",
+                )
+                for kind in kinds
+                for i in range((type_counts or {}).get(kind, count))
+            ],
+        )
 
 
 def subtitle_boundary(method, url, **kwargs):

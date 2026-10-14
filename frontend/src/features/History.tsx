@@ -1,3 +1,4 @@
+import { methodLabel } from "@/lib/exercises"
 import { useState } from "react"
 import { t, getLocale } from "@/i18n"
 import { ArrowRight, Clock, Check, RotateCcw, Trash2 } from "lucide-react"
@@ -265,7 +266,10 @@ function SessionCard({
             {done ? t("Завершено") : t("В процессе")}
           </Badge>
           <Badge variant="outline">
-            {session.mode === "quiz" ? t("Тест") : t("Флеш-карты")}
+            {methodLabel(
+              session.practice_method ||
+                (session.mode === "quiz" ? "choice" : "flashcard")
+            )}
           </Badge>
         </div>
         <CardTitle className="text-xl">

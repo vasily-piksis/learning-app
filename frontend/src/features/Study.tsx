@@ -1,3 +1,7 @@
+import ExerciseInput, { completeAnswer } from "./exercises/ExerciseInput"
+import ExerciseSolution from "./exercises/ExerciseSolution"
+import { questionLabel, submissionText } from "@/lib/exercises"
+import type { ExerciseSubmission } from "@/types"
 import { correctIndices } from "@/lib/answers"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -78,7 +82,7 @@ export default function Study({ id }: { id: number }) {
         title={value.topic_names.join(" · ")}
         description={
           value.mode === "quiz"
-            ? t("Не спеши. Выбери ответ, который кажется верным.")
+            ? t("Не спеши. Выполни задание своим способом.")
             : t("Попробуй вспомнить ответ, прежде чем открыть карточку.")
         }
       />
@@ -118,17 +122,12 @@ function Question({
   const [card, setCard] = useState<StudyCard>(session.card!),
     [choice, setChoice] = useState<number | null>(null),
     [choices, setChoices] = useState<number[]>([]),
+    [submission, setSubmission] = useState<ExerciseSubmission | null>(null),
     [feedback, setFeedback] = useState<Feedback | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null)
   const [answerLocked, setAnswerLocked] = useState(false)
-  const answerRequest = useRef<{
-    position: number
-    idempotency_key: string
-    choice?: number
-    choices?: number[]
-    remembered?: boolean
-  } | null>(null)
+  const answerRequest = useRef<Record<string, unknown> | null>(null)
   async function answer(remembered?: boolean) {
     setAnswerLocked(true)
     if (!answerRequest.current)
@@ -136,9 +135,11 @@ function Question({
         position: session.position,
         idempotency_key: crypto.randomUUID(),
         ...(session.mode === "quiz"
-          ? card.multiple_answers
-            ? { choices }
-            : { choice: choice! }
+          ? card.question_type && card.question_type !== "choice"
+            ? submission
+            : card.multiple_answers
+              ? { choices }
+              : { choice: choice! }
           : { remembered }),
       }
     setBusy(true)
@@ -153,6 +154,10 @@ function Question({
       )
     } catch (e) {
       setError(errorText(e))
+      if (e instanceof APIError && e.status === 422) {
+        answerRequest.current = null
+        setAnswerLocked(false)
+      }
       if (e instanceof APIError && e.status === 409) {
         answerRequest.current = null
         onNext()
@@ -174,7 +179,9 @@ function Question({
             })}
           </span>
           <Badge variant="secondary">
-            {session.mode === "quiz" ? t("Тест") : t("Флеш-карта")}
+            {session.mode === "quiz"
+              ? questionLabel(card.question_type)
+              : t("Флеш-карта")}
           </Badge>
         </div>
         <Progress
@@ -190,92 +197,122 @@ function Question({
           <CardTitle className="question-title">{shown.question}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
-          {session.mode === "quiz" && (
-            <FieldSet className="quiz-options">
-              {shown.multiple_answers && (
-                <FieldLegend>{t("Выбери все правильные ответы")}</FieldLegend>
-              )}
-              {shown.options.map((option, i) => {
-                const correct = !!feedback && correctIndices(shown).includes(i)
-                const selected = shown.multiple_answers
-                  ? choices.includes(i)
-                  : choice === i
-                const incorrect = !!feedback && selected && !correct
-                if (shown.multiple_answers)
+          {session.mode === "quiz" &&
+            (!card.question_type || card.question_type === "choice") && (
+              <FieldSet className="quiz-options">
+                {shown.multiple_answers && (
+                  <FieldLegend>{t("Выбери все правильные ответы")}</FieldLegend>
+                )}
+                {shown.options.map((option, i) => {
+                  const correct =
+                    !!feedback && correctIndices(shown).includes(i)
+                  const selected = shown.multiple_answers
+                    ? choices.includes(i)
+                    : choice === i
+                  const incorrect = !!feedback && selected && !correct
+                  if (shown.multiple_answers)
+                    return (
+                      <label
+                        key={i}
+                        className={cn(
+                          "quiz-option flex items-center gap-3 rounded-xl border p-4",
+                          selected && "bg-secondary",
+                          feedback &&
+                            correct &&
+                            "correct border-emerald-600 bg-emerald-50 text-emerald-900",
+                          incorrect &&
+                            "incorrect border-destructive bg-destructive/10 text-destructive"
+                        )}
+                      >
+                        <Checkbox
+                          checked={selected}
+                          disabled={busy || !!feedback || answerLocked}
+                          aria-label={option}
+                          onCheckedChange={(checked) =>
+                            setChoices((indices) =>
+                              checked
+                                ? [...indices, i].sort((a, b) => a - b)
+                                : indices.filter((index) => index !== i)
+                            )
+                          }
+                        />
+                        <span>{option}</span>
+                        {correct && <Check aria-hidden="true" />}
+                        {incorrect && <X aria-hidden="true" />}
+                        {feedback && correct && !selected && (
+                          <span className="text-sm">
+                            {t("Пропущен правильный ответ")}
+                          </span>
+                        )}
+                      </label>
+                    )
                   return (
-                    <label
+                    <Button
                       key={i}
-                      className={cn(
-                        "quiz-option flex items-center gap-3 rounded-xl border p-4",
-                        selected && "bg-secondary",
-                        feedback &&
-                          correct &&
+                      variant={choice === i ? "secondary" : "outline"}
+                      className={[
+                        "quiz-option h-auto justify-start text-left whitespace-normal",
+                        feedback && "disabled:opacity-100",
+                        correct &&
                           "correct border-emerald-600 bg-emerald-50 text-emerald-900",
                         incorrect &&
-                          "incorrect border-destructive bg-destructive/10 text-destructive"
-                      )}
+                          "incorrect border-destructive bg-destructive/10 text-destructive",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      disabled={busy || !!feedback || answerLocked}
+                      aria-pressed={choice === i}
+                      onClick={() => setChoice(i)}
                     >
-                      <Checkbox
-                        checked={selected}
-                        disabled={busy || !!feedback || answerLocked}
-                        aria-label={option}
-                        onCheckedChange={(checked) =>
-                          setChoices((indices) =>
-                            checked
-                              ? [...indices, i].sort((a, b) => a - b)
-                              : indices.filter((index) => index !== i)
-                          )
-                        }
-                      />
+                      <span className="option-letter">
+                        {String.fromCharCode(65 + i)}
+                      </span>
                       <span>{option}</span>
-                      {correct && <Check aria-hidden="true" />}
-                      {incorrect && <X aria-hidden="true" />}
-                      {feedback && correct && !selected && (
-                        <span className="text-sm">
-                          {t("Пропущен правильный ответ")}
-                        </span>
+                      {correct && (
+                        <>
+                          <Check data-icon="inline-end" />
+                          <span className="sr-only">
+                            {t("Правильный ответ")}
+                          </span>
+                        </>
                       )}
-                    </label>
+                      {incorrect && (
+                        <>
+                          <X data-icon="inline-end" />
+                          <span className="sr-only">{t("Неверный ответ")}</span>
+                        </>
+                      )}
+                    </Button>
                   )
-                return (
-                  <Button
-                    key={i}
-                    variant={choice === i ? "secondary" : "outline"}
-                    className={[
-                      "quiz-option h-auto justify-start text-left whitespace-normal",
-                      feedback && "disabled:opacity-100",
-                      correct &&
-                        "correct border-emerald-600 bg-emerald-50 text-emerald-900",
-                      incorrect &&
-                        "incorrect border-destructive bg-destructive/10 text-destructive",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    disabled={busy || !!feedback || answerLocked}
-                    aria-pressed={choice === i}
-                    onClick={() => setChoice(i)}
-                  >
-                    <span className="option-letter">
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    <span>{option}</span>
-                    {correct && (
-                      <>
-                        <Check data-icon="inline-end" />
-                        <span className="sr-only">{t("Правильный ответ")}</span>
-                      </>
-                    )}
-                    {incorrect && (
-                      <>
-                        <X data-icon="inline-end" />
-                        <span className="sr-only">{t("Неверный ответ")}</span>
-                      </>
-                    )}
-                  </Button>
-                )
-              })}
-            </FieldSet>
-          )}
+                })}
+              </FieldSet>
+            )}
+          {session.mode === "quiz" &&
+            card.question_type &&
+            card.question_type !== "choice" && (
+              <div
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    card.question_type === "written" &&
+                    completeAnswer(card, submission) &&
+                    !busy &&
+                    !feedback
+                  ) {
+                    event.preventDefault()
+                    void answer()
+                  }
+                }}
+              >
+                <ExerciseInput
+                  card={card}
+                  value={submission}
+                  onChange={setSubmission}
+                  disabled={busy || !!feedback || answerLocked}
+                  feedback={feedback}
+                />
+              </div>
+            )}
           {revealed && (
             <div className="answer-content">
               <p
@@ -288,7 +325,7 @@ function Question({
                     : t("Неверно. Правильный ответ:")
                   : t("Ответ")}
               </p>
-              <p className="answer-text">{shown.answer}</p>
+              <ExerciseSolution card={shown} />
               <Sources sources={shown.sources} />
             </div>
           )}
@@ -307,7 +344,11 @@ function Question({
               className="ml-auto"
               disabled={
                 busy ||
-                (card.multiple_answers ? !choices.length : choice === null)
+                (card.question_type && card.question_type !== "choice"
+                  ? !completeAnswer(card, submission)
+                  : card.multiple_answers
+                    ? !choices.length
+                    : choice === null)
               }
               onClick={() => void answer()}
             >
@@ -368,7 +409,7 @@ function Question({
       />
       <p className="study-note">
         {t(
-          "Ответы сохраняются после проверки. Можно продолжить позже с любого устройства."
+          "Проверенные ответы сохраняются. Введённый, но не отправленный ответ пока не сохранён."
         )}
       </p>
     </div>
@@ -441,13 +482,7 @@ function ReviewCard({
   item,
 }: {
   sessionId: number
-  item: {
-    position: number
-    card: StudyCard
-    correct: boolean
-    choice: number | null
-    choices?: number[]
-  }
+  item: NonNullable<StudySession["review"]>[number]
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -459,10 +494,13 @@ function ReviewCard({
         >
           {item.correct ? t("Помнишь") : t("Для повторения")}
         </Badge>
+        <Badge variant="outline" className="self-start">
+          {questionLabel(item.card.question_type)}
+        </Badge>
         <CardTitle>{item.card.question}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {(item.choices?.length || item.choice != null) && (
+        {!item.submission && (item.choices?.length || item.choice != null) && (
           <p className="text-sm text-muted-foreground">
             {t("Твой ответ: {answer}", {
               answer: (item.choices || [item.choice!])
@@ -471,7 +509,29 @@ function ReviewCard({
             })}
           </p>
         )}
-        <p className="whitespace-pre-wrap">{item.card.answer}</p>
+        {item.submission && (
+          <p className="text-sm">
+            {t("Твой ответ: {answer}", {
+              answer: submissionText(item.card, item.submission),
+            })}
+          </p>
+        )}
+        {!!item.parts?.length && (
+          <p>
+            {t("Верных частей: {correct} из {count}", {
+              correct: item.parts.filter((p) => p.correct).length,
+              count: item.parts.length,
+            })}
+          </p>
+        )}
+        {item.message_code === "incompatible_combination" && (
+          <p className="text-destructive">
+            {t(
+              "Эти ответы допустимы по отдельности, но не сочетаются друг с другом."
+            )}
+          </p>
+        )}
+        <ExerciseSolution card={item.card} />
         <Sources sources={item.card.sources} />
         <Button
           variant="outline"

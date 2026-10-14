@@ -1,4 +1,95 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Способ проверки": { pl: "Sposób sprawdzenia", en: "Practice method" },
+  "Смешанная практика": { pl: "Ćwiczenia mieszane", en: "Mixed practice" },
+  "Твой ответ": { pl: "Twoja odpowiedź", en: "Your answer" },
+  "Верных частей: {correct} из {count}": {
+    pl: "Poprawne części: {correct} z {count}",
+    en: "Correct parts: {correct} of {count}",
+  },
+  "Эти ответы допустимы по отдельности, но не сочетаются друг с другом.": {
+    pl: "Te odpowiedzi są poprawne osobno, ale nie pasują do siebie.",
+    en: "These answers are valid separately but do not work together.",
+  },
+  "Выбери слово слева, затем соответствие справа.": {
+    pl: "Wybierz słowo po lewej, a następnie jego odpowiednik po prawej.",
+    en: "Select a word on the left, then its match on the right.",
+  },
+  "Отменить пару": { pl: "Usuń parę", en: "Undo pair" },
+  "Отменить пару: {left} — {right}": {
+    pl: "Usuń parę: {left} — {right}",
+    en: "Undo pair: {left} — {right}",
+  },
+  "Нажимай слова в нужном порядке. Нажми собранное слово, чтобы вернуть его.": {
+    pl: "Klikaj słowa w odpowiedniej kolejności. Kliknij ułożone słowo, aby je cofnąć.",
+    en: "Select words in order. Select an assembled word to return it.",
+  },
+  "Твоё предложение": { pl: "Twoje zdanie", en: "Your sentence" },
+  "Вернуть слово {n}: {word}": {
+    pl: "Cofnij słowo {n}: {word}",
+    en: "Return word {n}: {word}",
+  },
+  "Очистить предложение": { pl: "Wyczyść zdanie", en: "Clear sentence" },
+  "Готово {ready}; проверить {drafts}": {
+    pl: "Gotowe: {ready}; do sprawdzenia: {drafts}",
+    en: "Ready: {ready}; to review: {drafts}",
+  },
+  "Материалы изменились; можно попробовать снова.": {
+    pl: "Materiały się zmieniły; możesz spróbować ponownie.",
+    en: "The materials have changed; you can try again.",
+  },
+  "Открыть дополнительную подготовку": {
+    pl: "Otwórz dodatkowe przygotowanie",
+    en: "Open additional preparation",
+  },
+  "Подготовка нужна: {items}": {
+    pl: "Wymagają przygotowania: {items}",
+    en: "Preparation needed: {items}",
+  },
+  "Подготовить задания": { pl: "Przygotuj zadania", en: "Prepare exercises" },
+  "Проверить задания": { pl: "Sprawdź zadania", en: "Review exercises" },
+  "Открыть подготовку": { pl: "Otwórz przygotowanie", en: "Open preparation" },
+  "Варианты ответа создаются моделью. Проверь их перед сохранением; занятие не начнётся автоматически.":
+    {
+      pl: "Model utworzy odpowiedzi do wyboru. Sprawdź je przed zapisaniem; ćwiczenie nie rozpocznie się automatycznie.",
+      en: "The model will create answer options. Review them before saving; practice will not start automatically.",
+    },
+  "Создать варианты ответа": {
+    pl: "Utwórz odpowiedzi do wyboru",
+    en: "Create answer options",
+  },
+  "Проверь варианты и сохрани выбранные. Затем вернись в тему и начни занятие.":
+    {
+      pl: "Sprawdź odpowiedzi i zapisz wybrane. Następnie wróć do tematu i rozpocznij ćwiczenie.",
+      en: "Review and save the selected options. Then return to the topic and start practice.",
+    },
+  "Подготовить заново": { pl: "Przygotuj ponownie", en: "Prepare again" },
+  "Подготовка отклонена": {
+    pl: "Przygotowanie odrzucone",
+    en: "Preparation discarded",
+  },
+  "Отклонить подготовку": {
+    pl: "Odrzuć przygotowanie",
+    en: "Discard preparation",
+  },
+  "Не спеши. Выполни задание своим способом.": {
+    pl: "Nie spiesz się. Wykonaj zadanie w wybrany sposób.",
+    en: "Take your time and complete the exercise.",
+  },
+  "Проверенные ответы сохраняются. Введённый, но не отправленный ответ пока не сохранён.":
+    {
+      pl: "Sprawdzone odpowiedzi są zapisywane. Wpisana, ale niewysłana odpowiedź nie jest jeszcze zapisana.",
+      en: "Checked answers are saved. An answer you have entered but not submitted is not yet saved.",
+    },
+  "Выбери темы и способ проверки. Для каждой темы видны готовые задания и недостающая подготовка.":
+    {
+      pl: "Wybierz tematy i sposób sprawdzenia. Każdy temat pokazuje gotowe zadania i brakujące przygotowanie.",
+      en: "Choose topics and a practice method. Each topic shows ready exercises and any preparation needed.",
+    },
+  "Добавь материалы и создай вопросы. После проверки выбери подходящий способ повторения.":
+    {
+      pl: "Dodaj materiały i utwórz pytania. Po sprawdzeniu wybierz odpowiedni sposób powtórki.",
+      en: "Add materials and create questions. After reviewing them, choose a suitable practice method.",
+    },
   "Убрать текст {n}": { pl: "Usuń tekst {n}", en: "Remove text {n}" },
   "Убрать пропуск {n}": { pl: "Usuń lukę {n}", en: "Remove gap {n}" },
   "Выбор ответа": { pl: "Wybór odpowiedzi", en: "Multiple choice" },

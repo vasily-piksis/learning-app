@@ -139,6 +139,9 @@ export type StudySession = {
     correct: boolean
     choice: number | null
     choices?: number[]
+    submission?: Feedback["submission"]
+    parts?: GradePart[]
+    message_code?: string | null
     remembered: boolean | null
   }[]
   id: number

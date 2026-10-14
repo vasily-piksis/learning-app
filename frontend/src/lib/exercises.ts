@@ -63,3 +63,56 @@ export function exerciseSolution(
     return value.accepted_orders.map((row) => row.join(" ")).join(" / ")
   return ""
 }
+
+export type PracticeMethod = "flashcard" | QuestionType | "mixed"
+export function practiceRequest(
+  method: PracticeMethod,
+  selectedTypes: QuestionType[]
+) {
+  return method === "flashcard"
+    ? { mode: "flashcard" as const }
+    : {
+        mode: "quiz" as const,
+        question_types: method === "mixed" ? selectedTypes : [method],
+      }
+}
+export function methodLabel(method: string) {
+  if (method === "flashcard") return t("Флеш-карты")
+  if (method === "mixed") return t("Смешанная практика")
+  return questionLabel(method as QuestionType)
+}
+export function submissionText(
+  card: import("@/types").Card,
+  value?: import("@/types").Feedback["submission"]
+) {
+  if (!value) return ""
+  if ("text" in value) return value.text
+  if ("gap_answers" in value) return Object.values(value.gap_answers).join("; ")
+  if ("choices" in value)
+    return value.choices.map((i) => card.options[i]).join("; ")
+  if ("remembered" in value)
+    return value.remembered ? t("Помню") : t("Повторить")
+  const exercise = card.exercise
+  if ("pairs" in value && exercise && "left" in exercise)
+    return value.pairs
+      .map(
+        (p) =>
+          `${exercise.left.find((i) => i.id === p.left_id)?.text} → ${exercise.right.find((i) => i.id === p.right_id)?.text}`
+      )
+      .join("; ")
+  if (
+    "order" in value &&
+    exercise &&
+    "tokens" in exercise &&
+    typeof exercise.tokens[0] !== "string"
+  )
+    return value.order
+      .map(
+        (id) =>
+          (exercise.tokens as { id: string; text: string }[]).find(
+            (i) => i.id === id
+          )?.text
+      )
+      .join(" ")
+  return ""
+}

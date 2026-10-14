@@ -109,12 +109,12 @@ export default function Topic({
           <p className="text-muted-foreground">
             {t("Готовых вопросов: {count}", { count: topic.card_count })}
           </p>
-          <StartStudy topicIds={[id]} disabled={!topic.card_count} />
+          <StartStudy topicIds={[id]} topics={[topic]} />
           {!topic.card_count && (
             <Blank
               title={t("Пока нет готовых вопросов")}
               description={t(
-                "Добавь материалы и создай вопросы. После проверки они станут доступны для обоих способов повторения."
+                "Добавь материалы и создай вопросы. После проверки выбери подходящий способ повторения."
               )}
               action={
                 <Button asChild>

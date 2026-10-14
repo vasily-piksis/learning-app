@@ -21,3 +21,9 @@ globalThis.ResizeObserver = class {
   unobserve() {}
   disconnect() {}
 }
+
+// jsdom omits layout/Pointer Capture APIs used by Radix Select.
+HTMLElement.prototype.scrollIntoView = () => {}
+HTMLElement.prototype.hasPointerCapture = () => false
+HTMLElement.prototype.setPointerCapture = () => {}
+HTMLElement.prototype.releasePointerCapture = () => {}

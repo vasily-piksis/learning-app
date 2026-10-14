@@ -51,7 +51,7 @@ async function generate(page: Page, topic: string, count = 2) {
   ).toBeVisible()
   await expect(
     page.getByLabel("Translate questions into another language")
-  ).not.toBeChecked()
+  ).toHaveCount(0)
   await page.getByLabel("How many questions?").fill(String(count))
   await page
     .getByRole("button", { name: "Create questions", exact: true })
@@ -70,7 +70,7 @@ async function saveDrafts(page: Page, count = 2) {
     .click()
   await page.getByRole("button", { name: "Go to study", exact: true }).click()
   await expect(
-    page.getByRole("button", { name: "Flashcards", exact: true })
+    page.getByRole("button", { name: "Start studying", exact: true })
   ).toBeEnabled()
 }
 
@@ -156,8 +156,8 @@ test("materials, original captions, drafts, both study modes and explanations", 
   await login(page)
   const topic = await createTopic(page, `Polska ${testInfo.project.name}`)
   await expect(
-    page.getByRole("button", { name: "Flashcards", exact: true })
-  ).toBeDisabled()
+    page.getByRole("button", { name: "Prepare exercises", exact: true })
+  ).toBeEnabled()
   await page.getByRole("link", { name: "Materials", exact: true }).click()
   const files = page.getByLabel("Choose PDF or photos", { exact: true })
   await files.setInputFiles({
@@ -215,7 +215,9 @@ test("materials, original captions, drafts, both study modes and explanations", 
     page.getByRole("heading", { name: "Review new questions" })
   ).toBeVisible()
   await saveDrafts(page)
-  await page.getByRole("button", { name: "Flashcards", exact: true }).click()
+  await page
+    .getByRole("button", { name: "Start studying", exact: true })
+    .click()
   await expect(page).toHaveURL(/#study\/\d+$/)
   const session = page.url()
   await expect(
@@ -255,7 +257,10 @@ test("materials, original captions, drafts, both study modes and explanations", 
     page.getByRole("button", { name: "Show answer", exact: true })
   ).toBeVisible()
   await page.getByRole("link", { name: "Back to topic", exact: true }).click()
-  await page.getByRole("button", { name: "Test", exact: true }).click()
+  await selectPractice(page, "Multiple choice")
+  await page
+    .getByRole("button", { name: "Start studying", exact: true })
+    .click()
   for (let index = 0; index < 2; index++) {
     await page
       .locator(".quiz-option")
@@ -374,7 +379,7 @@ test("edit questions, append materials and keep another user's history private",
   await page.getByRole("button", { name: "Sign in", exact: true }).click()
   await page.goto(`/#${topic}`)
   await expect(
-    page.getByRole("button", { name: "Flashcards", exact: true })
+    page.getByRole("button", { name: "Start studying", exact: true })
   ).toBeEnabled()
   await page.getByRole("link", { name: "History", exact: true }).click()
   await expect(
@@ -489,7 +494,10 @@ test("multiple answers, deletion confirmations, reupload and preserved history",
     .check()
   await page.getByRole("button", { name: "Save changes", exact: true }).click()
   await saveDrafts(page, 1)
-  await page.getByRole("button", { name: "Test", exact: true }).click()
+  await selectPractice(page, "Multiple choice")
+  await page
+    .getByRole("button", { name: "Start studying", exact: true })
+    .click()
   await expect(
     page.getByText("Select all correct answers", { exact: true })
   ).toBeVisible()
@@ -514,7 +522,7 @@ test("multiple answers, deletion confirmations, reupload and preserved history",
     .getByRole("button", { name: "Session result", exact: true })
     .click()
   await expect(
-    page.getByText("Your answer: stół; krzesło", { exact: true })
+    page.getByText(/^Your answer: (stół; krzesło|krzesło; stół)$/)
   ).toBeVisible()
   const sessionURL = page.url()
   await page
@@ -543,7 +551,7 @@ test("multiple answers, deletion confirmations, reupload and preserved history",
   ).toHaveCount(0)
   await page.goto(sessionURL)
   await expect(
-    page.getByText("Your answer: stół; krzesło", { exact: true })
+    page.getByText(/^Your answer: (stół; krzesło|krzesło; stół)$/)
   ).toBeVisible()
   await expect(page.getByText(/Material deleted/)).toBeVisible()
   await page.goto(`/#${topic}/questions`)
@@ -581,7 +589,7 @@ test("multiple answers, deletion confirmations, reupload and preserved history",
     page.getByRole("link", { name: "Return to library", exact: true }).first()
   ).toHaveAttribute("href", "#library")
   await expect(
-    page.getByText("Your answer: stół; krzesło", { exact: true })
+    page.getByText(/^Your answer: (stół; krzesło|krzesło; stół)$/)
   ).toBeVisible()
   await page
     .getByRole("button", { name: "Review difficult cards", exact: true })
@@ -610,13 +618,11 @@ test("delete a whole subject, keep private originals protected and preserve hist
   ).json()
   const subjectRoute = `/#library/subject/${topicData.subject_id}`
   await page.goto(`/#${topic}/materials`)
-  await page
-    .getByLabel("Choose PDF or photos", { exact: true })
-    .setInputFiles({
-      name: "private.pdf",
-      mimeType: "application/pdf",
-      buffer: pdf("Original private lesson for browser QA"),
-    })
+  await page.getByLabel("Choose PDF or photos", { exact: true }).setInputFiles({
+    name: "private.pdf",
+    mimeType: "application/pdf",
+    buffer: pdf("Original private lesson for browser QA"),
+  })
   await page
     .getByRole("button", { name: "Upload files (1)", exact: true })
     .click()
@@ -629,7 +635,10 @@ test("delete a whole subject, keep private originals protected and preserve hist
   await addVideo(page)
   await generate(page, topic, 1)
   await saveDrafts(page, 1)
-  await page.getByRole("button", { name: "Test", exact: true }).click()
+  await selectPractice(page, "Multiple choice")
+  await page
+    .getByRole("button", { name: "Start studying", exact: true })
+    .click()
   await page.getByRole("button", { name: /Wisła/ }).click()
   await page.getByRole("button", { name: "Check answer", exact: true }).click()
   await page
@@ -722,3 +731,8 @@ test("delete a whole subject, keep private originals protected and preserve hist
     )
   ).toBe(true)
 })
+
+async function selectPractice(page: Page, label: string) {
+  await page.getByRole("combobox", { name: "Practice method" }).click()
+  await page.getByRole("option", { name: new RegExp(label) }).click()
+}
