@@ -413,3 +413,60 @@ test("gallery pages deduplicate candidates when a concurrent upload shifts the n
     expect(screen.getAllByRole("button", { name: "Use draft" })).toHaveLength(2)
   )
 })
+
+test("discarding a displayed draft from the first 50 does not skip the unseen 51st candidate", async () => {
+  let remaining = Array.from({ length: 51 }, (_, index) => ({
+    ...draft,
+    id: `draft-${index}`,
+    asset_id: `draft-${index}`,
+    url: `/api/image-candidates/draft-${index}/preview`,
+  }))
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        const id = path.split("/").pop()
+        remaining = remaining.filter((item) => item.id !== id)
+        return new Response(JSON.stringify({ discarded: true }))
+      }
+      const cursor = Number(
+        new URL(path, "http://localhost").searchParams.get("cursor") || 0
+      )
+      return new Response(
+        JSON.stringify({
+          items: remaining.slice(cursor, cursor + 50),
+          next_cursor: remaining.length > cursor + 50 ? cursor + 50 : null,
+        })
+      )
+    })
+  )
+  render(<EditQuestion card={card} onSaved={() => {}} />)
+  await edit()
+  await waitFor(() =>
+    expect(screen.getAllByRole("button", { name: "Use draft" })).toHaveLength(
+      50
+    )
+  )
+  await userEvent.click(
+    screen.getAllByRole("button", { name: "Discard draft" })[0]
+  )
+  await waitFor(() =>
+    expect(screen.getAllByRole("button", { name: "Use draft" })).toHaveLength(
+      49
+    )
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: "Load more drafts" })
+  )
+  await waitFor(() =>
+    expect(screen.getAllByRole("button", { name: "Use draft" })).toHaveLength(
+      50
+    )
+  )
+  expect(
+    document.querySelector('a[href="/api/image-candidates/draft-50/preview"]')
+  ).toBeInTheDocument()
+  expect(
+    document.querySelector('a[href="/api/image-candidates/draft-0/preview"]')
+  ).not.toBeInTheDocument()
+})

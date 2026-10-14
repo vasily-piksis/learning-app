@@ -296,6 +296,10 @@ export default function QuestionImages({
                           setDrafts((previous) =>
                             previous.filter((d) => d.id !== draft.id)
                           )
+                          // Deletion shifts server offsets; merge the next page from the start.
+                          setCursor((previous) =>
+                            previous === null ? null : 0
+                          )
                           if (update?.asset_id === draft.id) {
                             const next = { ...value }
                             delete next[slot]
