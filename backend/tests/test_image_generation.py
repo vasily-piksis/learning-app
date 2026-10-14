@@ -720,3 +720,36 @@ def test_publication_fsync_failure_does_not_discard_already_durable_bytes(
     assert response.json()["status"] == "succeeded"
     assert client.get(response.json()["result"]["candidate"]["url"]).content == original_bytes[0]
     assert len(enabled) == len(attempts(app)) == 1
+
+
+def test_card_image_job_filter_recovers_older_owned_work_before_limit(client, app, enabled):
+    _, card = question(client, app)
+    old = start(client, card).json()
+    with app.state.db.session() as db:
+        image_job = db.get(Job, old["id"])
+        owner = image_job.user_id
+        image_job.status = "unknown"
+        db.add_all(
+            Job(kind="generate", user_id=owner, status="succeeded", payload={}, result={})
+            for _ in range(101)
+        )
+        db.add(
+            Job(
+                kind="generate_image",
+                user_id=owner,
+                status="failed",
+                payload={"card_id": card["id"] + 1, "slot": "question"},
+            )
+        )
+    assert old["id"] not in [job["id"] for job in client.get("/api/jobs").json()]
+    path = f"/api/jobs?card_id={card['id']}&kind=generate_image"
+    recovered = client.get(path)
+    assert recovered.status_code == 200
+    assert [(job["id"], job["status"]) for job in recovered.json()] == [(old["id"], "unknown")]
+    assert client.get("/api/jobs?card_id=0&kind=generate_image").status_code == 422
+    assert client.get(f"/api/jobs?card_id={card['id']}&kind=explain").status_code == 422
+    login = client.post(
+        "/api/auth/login", json={"username": "parent", "password": "parent-password"}
+    ).json()
+    client.headers.update({"X-CSRF-Token": login["csrf_token"]})
+    assert client.get(path).json() == []

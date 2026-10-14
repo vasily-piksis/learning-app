@@ -306,3 +306,272 @@ test("private upload drafts, immutable study/repeat images and final reference c
   await anonymous.close()
   await parent.close()
 })
+
+test("explicit paid image review, timeout recovery and quiz answer privacy", async ({
+  page,
+}, info) => {
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  page.on("console", (message) => {
+    if (message.type() === "error" && !message.text().includes("status of"))
+      errors.push(message.text())
+  })
+  await page.goto("/")
+  await page.getByLabel("Język interfejsu", { exact: true }).selectOption("en")
+  await page.getByLabel("Username", { exact: true }).fill("child")
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("browser-child-password")
+  await page.getByRole("button", { name: "Sign in", exact: true }).click()
+  await expect(
+    page.getByRole("link", { name: "Library", exact: true })
+  ).toBeVisible()
+  const me = await (await page.request.get("/api/auth/me")).json()
+  const headers = {
+    "X-CSRF-Token": me.csrf_token,
+    Origin: new URL(page.url()).origin,
+  }
+  const subject = await (
+    await page.request.post("/api/subjects", {
+      headers,
+      data: { name: `Paid images ${info.project.name}` },
+    })
+  ).json()
+  const topic = await (
+    await page.request.post("/api/topics", {
+      headers,
+      data: { subject_id: subject.id, name: "Quiz images" },
+    })
+  ).json()
+  const document = await (
+    await page.request.post(`/api/topics/${topic.id}/youtube`, {
+      headers,
+      data: { url: "https://www.youtube.com/watch?v=6crPrHg2MZc" },
+    })
+  ).json()
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(`/api/jobs/${document.job_id}`)).json())
+          .status
+    )
+    .toBe("succeeded")
+  const generation = await (
+    await page.request.post("/api/generate", {
+      headers,
+      data: {
+        topic_ids: [topic.id],
+        mode: "quiz",
+        count: 1,
+        idempotency_key: crypto.randomUUID(),
+      },
+    })
+  ).json()
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(`/api/jobs/${generation.id}`)).json())
+          .status
+    )
+    .toBe("succeeded")
+  const paidRequests: { url: string; body: unknown }[] = []
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      /generate-image|retry-image$/.test(request.url())
+    )
+      paidRequests.push({ url: request.url(), body: request.postDataJSON() })
+  })
+  await page.goto(`/#generation/${generation.id}`)
+  await page.getByRole("button", { name: "Edit card", exact: true }).click()
+  const question = page.getByRole("group", {
+    name: "Question image",
+    exact: true,
+  })
+  const answer = page.getByRole("group", { name: "Answer image", exact: true })
+  await expect(
+    question.getByLabel("Image prompt", { exact: true })
+  ).toHaveValue(/bez tekstu/)
+  await expect(
+    question.getByRole("button", { name: "Generate image (paid)", exact: true })
+  ).toBeEnabled()
+  expect(paidRequests).toEqual([])
+  for (const [locale, edit, generate, cancel] of [
+    ["pl", "Edytuj pytanie", "Wygeneruj obrazek (płatnie)", "Anuluj"],
+    ["ru", "Изменить карточку", "Сгенерировать картинку (платно)", "Отмена"],
+    ["en", "Edit card", "Generate image (paid)", "Cancel"],
+  ]) {
+    await page
+      .getByRole("button", { name: /^(Cancel|Anuluj|Отмена)$/, exact: true })
+      .click()
+    await page
+      .getByLabel(/^(Interface language|Język interfejsu|Язык интерфейса)$/)
+      .selectOption(locale)
+    await page.getByRole("button", { name: edit, exact: true }).click()
+    await expect(
+      page.getByRole("button", { name: generate, exact: true })
+    ).toHaveCount(2)
+    await expect(
+      page.getByRole("button", { name: cancel, exact: true })
+    ).toBeVisible()
+    expect(
+      await page
+        .getByRole("dialog")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth)
+    ).toBe(true)
+    await page
+      .getByRole("button", { name: generate, exact: true })
+      .first()
+      .scrollIntoViewIfNeeded()
+    await page.screenshot({
+      path: `/tmp/learning-images-paid-${locale}-${info.project.name}.png`,
+      fullPage: true,
+    })
+    expect(paidRequests).toHaveLength(0)
+  }
+  await question
+    .getByLabel("Image prompt", { exact: true })
+    .fill(`timeout once ${info.project.name}`)
+  await question
+    .getByRole("button", { name: "Generate image (paid)", exact: true })
+    .click()
+  await expect(
+    question.getByText(/The result and charge may be unknown/)
+  ).toBeVisible()
+  expect(paidRequests).toHaveLength(1)
+  await question
+    .getByText(/The result and charge may be unknown/)
+    .scrollIntoViewIfNeeded()
+  await page.screenshot({
+    path: `/tmp/learning-images-timeout-${info.project.name}.png`,
+    fullPage: true,
+  })
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await page.reload()
+  await page.getByRole("button", { name: "Edit card", exact: true }).click()
+  await expect(
+    question.getByRole("button", {
+      name: "Try image generation again (paid)",
+      exact: true,
+    })
+  ).toBeDisabled()
+  expect(paidRequests).toHaveLength(1)
+  await question
+    .getByLabel("I understand another attempt may cost extra", { exact: true })
+    .check()
+  await question
+    .getByRole("button", {
+      name: "Try image generation again (paid)",
+      exact: true,
+    })
+    .click()
+  await expect(
+    question.getByRole("button", { name: "Use draft", exact: true })
+  ).toBeVisible()
+  expect(paidRequests).toHaveLength(2)
+  expect(paidRequests[1].body).toMatchObject({
+    acknowledge_extra_cost: true,
+    idempotency_key: expect.any(String),
+  })
+  expect(await question.locator("img").count()).toBe(0)
+  await question.getByRole("button", { name: "Use draft", exact: true }).click()
+  await expect(
+    question.getByText("Created by AI", { exact: true })
+  ).toBeVisible()
+  await question
+    .getByLabel("Image description", { exact: true })
+    .fill("Quiz question illustration")
+  await answer
+    .getByLabel("Image prompt", { exact: true })
+    .fill("provider denied")
+  await answer
+    .getByRole("button", { name: "Generate image (paid)", exact: true })
+    .click()
+  await expect(
+    answer.getByRole("button", {
+      name: "Try image generation again (paid)",
+      exact: true,
+    })
+  ).toBeVisible()
+  await expect(
+    answer.getByText(
+      "Provider rejected the image request. Check settings or explicitly retry.",
+      { exact: true }
+    )
+  ).toBeVisible()
+  await answer
+    .getByRole("button", { name: "Discard image generation", exact: true })
+    .click()
+  // Provider refusal leaves normal upload available, including a long accessible alt.
+  await answer
+    .getByLabel("Upload image", { exact: true })
+    .setInputFiles({ name: "river.png", mimeType: "image/png", buffer: png })
+  await expect(answer.locator("img")).toHaveAttribute("src", /image-candidates/)
+  const longAlt = "Długa odpowiedź ".repeat(30).slice(0, 500)
+  await answer.getByLabel("Image description", { exact: true }).fill(longAlt)
+  await expect(page.getByRole("dialog")).toBeVisible()
+  expect(
+    await page
+      .getByRole("dialog")
+      .evaluate((element) => element.scrollWidth <= element.clientWidth)
+  ).toBe(true)
+  await page.screenshot({
+    path: `/tmp/learning-images-paid-editor-${info.project.name}.png`,
+    fullPage: true,
+  })
+  await page.getByRole("button", { name: "Save changes", exact: true }).click()
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  const card = (
+    await (await page.request.get(`/api/cards?topic_id=${topic.id}`)).json()
+  )[0]
+  expect(card.images.question.origin).toBe("generated")
+  await page.request.post("/api/cards/save", {
+    headers,
+    data: { card_ids: [card.id] },
+  })
+  const session = await (
+    await page.request.post("/api/study", {
+      headers,
+      data: { topic_ids: [topic.id], mode: "quiz" },
+    })
+  ).json()
+  const before = JSON.stringify(session)
+  expect(session.card.images).not.toHaveProperty("answer")
+  expect(before).not.toContain(card.images.answer.asset_id)
+  expect(before).not.toContain(longAlt)
+  const hiddenURL = `/api/study/${session.id}/cards/0/images/answer`
+  expect((await page.request.get(hiddenURL)).status()).toBe(404)
+  const requests: string[] = []
+  page.on("request", (request) => {
+    if (request.url().includes(`/api/study/${session.id}/`))
+      requests.push(request.url())
+  })
+  await page.goto(`/#study/${session.id}`)
+  await expect(
+    page.getByRole("img", { name: "Quiz question illustration", exact: true })
+  ).toBeVisible()
+  expect(requests.some((url) => url.endsWith("/images/answer"))).toBe(false)
+  await expect(
+    page.getByRole("img", { name: longAlt, exact: true })
+  ).toHaveCount(0)
+  await page.getByRole("button", { name: /Nil/ }).click()
+  // Merely selecting an option must not reveal or prefetch the answer image.
+  expect((await page.request.get(hiddenURL)).status()).toBe(404)
+  expect(requests.some((url) => url.endsWith("/images/answer"))).toBe(false)
+  await page.getByRole("button", { name: "Check answer", exact: true }).click()
+  await expect(
+    page.getByRole("img", { name: longAlt, exact: true })
+  ).toBeVisible()
+  expect((await page.request.get(hiddenURL)).ok()).toBe(true)
+  expect(requests.some((url) => url.endsWith("/images/answer"))).toBe(true)
+  await page.screenshot({
+    path: `/tmp/learning-images-quiz-revealed-${info.project.name}.png`,
+    fullPage: true,
+  })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth
+    )
+  ).toBe(true)
+  expect(errors).toEqual([])
+})

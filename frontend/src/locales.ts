@@ -1,4 +1,150 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Генерация картинок": { pl: "Generacja obrazków", en: "Image generation" },
+
+  "Эта задача использует исходный запрос и параметры. Для нового запроса сначала откажись от задачи.":
+    {
+      pl: "To zadanie używa pierwotnego opisu i ustawień. Odrzuć je przed użyciem nowego opisu.",
+      en: "This job uses its original prompt and settings. Discard it first to use a new prompt.",
+    },
+
+  "Результат неизвестен; запрос мог быть оплачен. Автоматического повтора нет":
+    {
+      pl: "Wynik nieznany; żądanie mogło zostać opłacone. Nie ponawiamy automatycznie.",
+      en: "Result unknown; the request may have been charged. No automatic retry.",
+    },
+  "Генерация картинок отключена или не настроена": {
+    pl: "Generacja obrazków jest wyłączona lub nieustawiona",
+    en: "Image generation is disabled or not configured",
+  },
+  "Дневной лимит запросов картинок исчерпан": {
+    pl: "Dzienny limit żądań obrazków został wyczerpany",
+    en: "Daily image request limit reached",
+  },
+  "Для этого места уже готовится картинка": {
+    pl: "Obrazek dla tego miejsca jest już przygotowywany",
+    en: "An image is already being generated for this slot",
+  },
+  "Сначала завершите локальное сохранение или дождитесь задачи": {
+    pl: "Najpierw zakończ lokalny zapis lub poczekaj na zadanie",
+    en: "Finish local saving or wait for the job first",
+  },
+  "Провайдер отклонил запрос картинки. Проверьте настройки или повторите явно":
+    {
+      pl: "Dostawca odrzucił żądanie obrazka. Sprawdź ustawienia lub jawnie ponów.",
+      en: "Provider rejected the image request. Check settings or explicitly retry.",
+    },
+  "Картинка получена. Повторите только локальное сохранение": {
+    pl: "Obrazek odebrano. Ponów tylko lokalny zapis",
+    en: "Image received. Retry only local saving",
+  },
+  "Нет картинки для локального сохранения": {
+    pl: "Brak obrazka do lokalnego zapisu",
+    en: "No image available for local saving",
+  },
+  "Не удалось сохранить картинку локально. Попробуйте ещё раз": {
+    pl: "Nie udało się zapisać obrazka lokalnie. Spróbuj ponownie",
+    en: "Could not save the image locally. Try again",
+  },
+  "Повторите локальное сохранение": {
+    pl: "Ponów lokalny zapis",
+    en: "Retry local saving",
+  },
+
+  "Запрос картинки": { pl: "Opis dla generatora", en: "Image prompt" },
+  "Сгенерировать картинку (платно)": {
+    pl: "Wygeneruj obrazek (płatnie)",
+    en: "Generate image (paid)",
+  },
+  "Картинка создаётся. Можно вернуться позже.": {
+    pl: "Trwa tworzenie obrazka. Możesz wrócić później.",
+    en: "Image generation in progress. You can return later.",
+  },
+  "Картинка получена. Повтор сохранения использует готовые данные без новой оплаты.":
+    {
+      pl: "Obrazek odebrano. Ponowny zapis używa gotowych danych bez nowej opłaty.",
+      en: "Image received. Saving again uses existing bytes without another charge.",
+    },
+  "Результат и списание могут быть неизвестны. Повторная генерация может потребовать дополнительной оплаты.":
+    {
+      pl: "Wynik i opłata mogą być nieznane. Kolejna generacja może kosztować dodatkowo.",
+      en: "The result and charge may be unknown. Another generation may cost extra.",
+    },
+  "Повторить сохранение картинки (бесплатно)": {
+    pl: "Ponów zapis obrazka (bezpłatnie)",
+    en: "Retry saving image (free)",
+  },
+  "Я понимаю, что новая попытка может стоить дополнительно": {
+    pl: "Rozumiem, że kolejna próba może kosztować dodatkowo",
+    en: "I understand another attempt may cost extra",
+  },
+  "Повторить генерацию картинки (платно)": {
+    pl: "Ponów generację obrazka (płatnie)",
+    en: "Try image generation again (paid)",
+  },
+  "Ответ сервера не получен. Проверь тот же запрос без новой попытки генерации.":
+    {
+      pl: "Nie otrzymano odpowiedzi serwera. Sprawdź to samo żądanie bez nowej próby generacji.",
+      en: "No server response. Check the same request without another generation attempt.",
+    },
+  "Проверить тот же запрос": {
+    pl: "Sprawdź to samo żądanie",
+    en: "Check the same request",
+  },
+  "Отказаться от генерации картинки": {
+    pl: "Odrzuć generację obrazka",
+    en: "Discard image generation",
+  },
+  "Родитель или пользователь проверяет соответствие ИИ-иллюстрации перед сохранением. Это не источник фактов.":
+    {
+      pl: "Rodzic lub użytkownik musi sprawdzić ilustrację AI przed zapisaniem. To nie źródło faktów.",
+      en: "A parent or user must review the AI illustration before saving. It is not a source of facts.",
+    },
+  "По умолчанию — без текста. Если нужен текст на картинке, укажи язык задания в запросе.":
+    {
+      pl: "Domyślnie bez tekstu. Jeśli obrazek ma zawierać tekst, podaj w opisie język zadania.",
+      en: "No text by default. For text in the image, specify the assignment language in the prompt.",
+    },
+  "Одна картинка за платную попытку. Стоимость зависит от модели и запроса; точная цена не обещается.":
+    {
+      pl: "Jeden obrazek na płatną próbę. Koszt zależy od modelu i opisu; dokładna cena nie jest gwarantowana.",
+      en: "One image per paid attempt. Cost depends on the model and prompt; no exact price is promised.",
+    },
+  "Общий дневной лимит попыток: {remaining} из {limit}. Это не денежный лимит.":
+    {
+      pl: "Wspólny dzienny limit prób: {remaining} z {limit}. To nie limit kwotowy.",
+      en: "Shared daily attempts remaining: {remaining} of {limit}. This is not a money limit.",
+    },
+  "Сброс лимита: {time}": {
+    pl: "Odnowienie limitu: {time}",
+    en: "Limit resets: {time}",
+  },
+  "Генерация картинок недоступна. Загрузка доступна.": {
+    pl: "Generacja obrazków jest niedostępna. Przesyłanie jest dostępne.",
+    en: "Image generation is unavailable. Upload is available.",
+  },
+  "Дневной лимит исчерпан.": {
+    pl: "Dzienny limit został wyczerpany.",
+    en: "Daily attempt limit reached.",
+  },
+  "Предыдущая попытка: нет доступа к провайдеру. После обновления доступа можно попробовать явно.":
+    {
+      pl: "Poprzednia próba: brak dostępu do dostawcy. Po aktualizacji dostępu możesz jawnie spróbować ponownie.",
+      en: "Previous attempt: provider access denied. After access is updated, you can explicitly try again.",
+    },
+  "Предыдущая попытка подтвердила доступ; будущий запрос может завершиться ошибкой.":
+    {
+      pl: "Poprzednia próba potwierdziła dostęp; kolejne żądanie może zakończyć się błędem.",
+      en: "Previous attempt confirmed access; a future request may still fail.",
+    },
+  "Доступ провайдера проверяется только явным платным запросом.": {
+    pl: "Dostęp do dostawcy sprawdzamy tylko przy jawnym płatnym żądaniu.",
+    en: "Provider access is checked only by an explicit paid request.",
+  },
+  "Генерация картинок пока недоступна. Загрузка доступна.": {
+    pl: "Generacja obrazków nie jest jeszcze dostępna. Przesyłanie jest dostępne.",
+    en: "Image generation is not yet available. Upload is available.",
+  },
+
   "Черновики картинок": { pl: "Szkice obrazków", en: "Image drafts" },
   "Картинка вопроса": { pl: "Obrazek pytania", en: "Question image" },
   "Картинка ответа": { pl: "Obrazek odpowiedzi", en: "Answer image" },

@@ -2,9 +2,10 @@ import hashlib
 import json
 import threading
 from collections import Counter
+from typing import Literal
 
 import pymupdf
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import ValidationError
 from sqlalchemy import select, text, update
 
@@ -426,18 +427,19 @@ def worker_loop(database, ai, stop: threading.Event):
 
 
 @router.get("/jobs")
-def jobs(request: Request):
+def jobs(
+    request: Request,
+    card_id: int | None = Query(default=None, ge=1),
+    kind: Literal["generate_image"] | None = None,
+):
     user = require_user(request)
     with request.app.state.db.session() as db:
-        return [
-            job_data(job, db)
-            for job in db.scalars(
-                select(Job)
-                .where(Job.user_id == user.id, Job.status != "deleted")
-                .order_by(Job.id.desc())
-                .limit(100)
-            )
-        ]
+        query = select(Job).where(Job.user_id == user.id, Job.status != "deleted")
+        if card_id is not None:
+            query = query.where(Job.payload["card_id"].as_integer() == card_id)
+        if kind is not None:
+            query = query.where(Job.kind == kind)
+        return [job_data(job, db) for job in db.scalars(query.order_by(Job.id.desc()).limit(100))]
 
 
 @router.get("/jobs/{identifier}")

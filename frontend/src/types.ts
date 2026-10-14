@@ -138,9 +138,30 @@ export type QuestionCandidate = {
   language: string | null
   exercise: FullExercise | null
 }
+export type ImageGenerationAvailability = {
+  status:
+    | "disabled"
+    | "missing_model"
+    | "invalid_model"
+    | "missing_key"
+    | "invalid_timezone"
+    | "invalid_limit"
+    | "ready"
+  enabled: boolean
+  model: string | null
+  settings: { n: number; size: string; quality: string; output_format: string }
+  access_status: "denied" | "confirmed" | "unverified"
+  limit: number
+  used: number | null
+  remaining: number
+  timezone: string
+  next_reset_at: string | null
+}
 export type Job = {
   id: number
   kind: string
+  card_id?: number
+  slot?: ImageSlot
   status: string
   error: string | null
   created: string
@@ -216,4 +237,13 @@ export type Explanation = {
   text: string
   example: string | null
   sources: Source[]
+}
+
+export type ImageGenerationJob = Omit<Job, "result"> & {
+  result: {
+    candidate?: ImageCandidate
+    can_retry_save?: boolean
+    applied_asset_id?: string
+    discarded?: boolean
+  } | null
 }

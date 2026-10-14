@@ -1,16 +1,18 @@
 """Disposable browser-test server; never included in the production image."""
 
+import io
 import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import uvicorn
-from app import downsub
+from app import downsub, image_generation
 from app.cli import create_user
 from app.config import Settings
 from app.main import create_app
 from fakes import FixtureAI
+from PIL import Image
 
 _data = TemporaryDirectory(prefix="learning-browser-")
 
@@ -148,6 +150,25 @@ def subtitle_boundary(method, url, **kwargs):
     raise AssertionError("Unexpected external request in browser tests")
 
 
+class BrowserImageGenerator:
+    """Provider boundary only: SQLite, workers, normalization and private files stay real."""
+
+    attempts = {}
+
+    def __init__(self, settings, model):
+        assert model == "browser-image-fixture"
+
+    def generate(self, prompt):
+        self.attempts[prompt] = self.attempts.get(prompt, 0) + 1
+        if "timeout once" in prompt and self.attempts[prompt] == 1:
+            raise image_generation.ImageOutcomeUnknown()
+        if "provider denied" in prompt:
+            raise image_generation.ImageProviderFailure("access_denied")
+        data = io.BytesIO()
+        Image.new("RGBA", (320, 180), (40, 110, 200, 128)).save(data, format="PNG")
+        return image_generation.GeneratedImage(data.getvalue(), {"usage": {"total_tokens": 1}})
+
+
 def browser_app():
     port = int(os.environ.get("E2E_PORT", "18940"))
     settings = Settings(
@@ -155,11 +176,15 @@ def browser_app():
         data_dir=Path(_data.name),
         app_origin=f"http://localhost:{port}",
         cookie_secure=False,
-        openai_api_key="",
+        openai_api_key="browser-fixture-only",
+        image_generation_enabled=True,
+        openai_image_model="browser-image-fixture",
+        image_daily_request_limit=100,
         youtube_provider="downsub",
         frontend_dir=Path("frontend/dist"),
     )
     downsub.request = subtitle_boundary
+    image_generation.ImageGenerator = BrowserImageGenerator
     instance = create_app(settings, ai=BrowserAI())
     create_user(instance.state.db, "child", "Browser Child", "browser-child-password")
     create_user(instance.state.db, "parent", "Browser Parent", "browser-parent-password")

@@ -160,7 +160,7 @@ export default function RegenerateQuestion({
                 </p>
                 <p>{card.question}</p>
                 <QuestionImageView image={card.images?.question} />
-                <QuestionImageView image={card.images?.answer} />
+                <ExerciseSolution card={card} />
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-sm text-muted-foreground">{t("Кандидат")}</p>
