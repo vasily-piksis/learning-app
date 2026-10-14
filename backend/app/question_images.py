@@ -212,7 +212,7 @@ def apply_updates(db, card, updates, user_id):
     db.flush()
 
 
-def write_candidate(database, identifier, encoded, width, height):
+def write_candidate(database, identifier, encoded, width, height, staged=False):
     with database.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         asset = db.get(ImageAsset, identifier)
@@ -221,12 +221,26 @@ def write_candidate(database, identifier, encoded, width, height):
         card = live_card(db, asset.target_card_id)
         path = asset_path(database, asset)
         temporary = Path(str(path) + ".part")
-        with temporary.open("wb") as stream:
-            temporary.chmod(0o600)
-            stream.write(encoded)
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(path)
+        if staged:
+            # The generator already fsynced this immutable normalized file. Never
+            # truncate its sole durable copy while publishing/recovering metadata.
+            source = path if path.exists() else temporary
+            if source.read_bytes() != encoded:
+                raise HTTPException(409, "Сохранённая картинка изменилась")
+            if source == temporary:
+                temporary.replace(path)
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        else:
+            with temporary.open("wb") as stream:
+                temporary.chmod(0o600)
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(path)
         asset.sha256, asset.size, asset.width, asset.height = (
             hashlib.sha256(encoded).hexdigest(),
             len(encoded),

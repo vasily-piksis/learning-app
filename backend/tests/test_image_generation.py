@@ -611,3 +611,112 @@ def test_cancel_during_local_save_failure_keeps_cancelled_tombstone(
     response = client.post(f"/api/jobs/{job['id']}/retry-image-save")
     assert response.json()["status"] == "cancelled"
     assert response.json()["result"] is None
+
+
+@pytest.mark.parametrize("failure", [OSError, SystemExit])
+@pytest.mark.parametrize("after_replace", [False, True])
+def test_publication_interruption_preserves_staged_bytes_for_free_retry(
+    client, app, enabled, monkeypatch, failure, after_replace
+):
+    from pathlib import Path
+
+    _, card = question(client, app)
+    job = start(client, card).json()
+    publish = images.write_candidate
+    original_bytes = []
+    candidate_paths = []
+
+    def interrupted_publication(*args):
+        database, identifier = args[:2]
+        with database.session() as db:
+            asset = images.staged_asset(db, job["id"])
+            path = images.asset_path(database, asset)
+        staged = Path(str(path) + ".part")
+        original_bytes.append(staged.read_bytes())
+        candidate_paths.extend([staged, path])
+        original_open, original_replace = Path.open, Path.replace
+
+        class BrokenWrite:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return self.stream.__exit__(*exc)
+
+            def write(self, data):
+                raise failure("interrupted destructive publication write")
+
+        def open_file(target, mode="r", *positional, **kwargs):
+            stream = original_open(target, mode, *positional, **kwargs)
+            if target == staged and mode == "wb":
+                return BrokenWrite(stream)
+            return stream
+
+        def replace_file(source, target):
+            if source == staged:
+                if after_replace:
+                    original_replace(source, target)
+                raise failure("interrupted atomic publication")
+            return original_replace(source, target)
+
+        with monkeypatch.context() as publication_patch:
+            publication_patch.setattr(Path, "open", open_file)
+            publication_patch.setattr(Path, "replace", replace_file)
+            return publish(*args)
+
+    monkeypatch.setattr(images, "write_candidate", interrupted_publication)
+    if failure is SystemExit:
+        with pytest.raises(SystemExit):
+            run(app, job["id"])
+    else:
+        run(app, job["id"])
+    assert any(path.exists() and path.read_bytes() == original_bytes[0] for path in candidate_paths)
+    monkeypatch.setattr(images, "write_candidate", publish)
+    # A process death requires recovery; a handled write error retries immediately.
+    # Either path discovers the original .part or the atomically published file.
+    if failure is SystemExit:
+        recover_jobs(app.state.db)
+    response = client.post(f"/api/jobs/{job['id']}/retry-image-save")
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["status"] == "succeeded"
+    assert client.get(result["result"]["candidate"]["url"]).content == original_bytes[0]
+    assert len(enabled) == len(attempts(app)) == 1
+
+
+def test_publication_fsync_failure_does_not_discard_already_durable_bytes(
+    client, app, enabled, monkeypatch
+):
+    _, card = question(client, app)
+    job = start(client, card).json()
+    publish = images.write_candidate
+    fsync = images.os.fsync
+    original_bytes = []
+    candidate_paths = []
+
+    def publication_with_disk_failure(*args):
+        with app.state.db.session() as db:
+            asset = images.staged_asset(db, job["id"])
+            path = images.asset_path(app.state.db, asset)
+        staged = images.Path(str(path) + ".part")
+        original_bytes.append(staged.read_bytes())
+        candidate_paths.extend([staged, path])
+        monkeypatch.setattr(
+            images.os, "fsync", lambda _: (_ for _ in ()).throw(OSError("disk unavailable"))
+        )
+        return publish(*args)
+
+    monkeypatch.setattr(images, "write_candidate", publication_with_disk_failure)
+    run(app, job["id"])
+    assert any(path.exists() and path.read_bytes() == original_bytes[0] for path in candidate_paths)
+    result = client.get(f"/api/jobs/{job['id']}").json()
+    assert result["status"] == "failed" and result["result"]["can_retry_save"]
+    monkeypatch.setattr(images.os, "fsync", fsync)
+    monkeypatch.setattr(images, "write_candidate", publish)
+    response = client.post(f"/api/jobs/{job['id']}/retry-image-save")
+    assert response.json()["status"] == "succeeded"
+    assert client.get(response.json()["result"]["candidate"]["url"]).content == original_bytes[0]
+    assert len(enabled) == len(attempts(app)) == 1

@@ -374,12 +374,13 @@ def finish_candidate(database, identifier):
         path = asset_path(database, asset)
         source = path if path.exists() else Path(str(path) + ".part")
         try:
-            encoded, width, height = normalize_image(source.read_bytes())
+            encoded = source.read_bytes()
+            _, width, height = normalize_image(encoded)
         except (OSError, HTTPException) as error:
             raise ImageOutcomeUnknown() from error
         identity, writing = asset.id, asset.stage == "writing"
     if writing:
-        write_candidate(database, identity, encoded, width, height)
+        write_candidate(database, identity, encoded, width, height, True)
     with database.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         job = db.get(Job, identifier)
@@ -463,13 +464,16 @@ def run_image_job(database, identifier):
                 source = path if path.exists() else Path(str(path) + ".part")
                 try:
                     normalize_image(source.read_bytes())
-                    with source.open("rb") as stream:
-                        os.fsync(stream.fileno())
-                    descriptor = os.open(source.parent, os.O_RDONLY)
-                    try:
-                        os.fsync(descriptor)
-                    finally:
-                        os.close(descriptor)
+                    # A publication failure cannot revoke already committed durable
+                    # staging. Only a lost state commit needs another fsync here.
+                    if not (job.result or {}).get("can_retry_save"):
+                        with source.open("rb") as stream:
+                            os.fsync(stream.fileno())
+                        descriptor = os.open(source.parent, os.O_RDONLY)
+                        try:
+                            os.fsync(descriptor)
+                        finally:
+                            os.close(descriptor)
                     staged = True
                 except (OSError, HTTPException):
                     asset.stage, asset.target_card_id = "discarded", None
