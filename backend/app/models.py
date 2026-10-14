@@ -105,6 +105,10 @@ class Card(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id"), index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
+    question_type: Mapped[str] = mapped_column(
+        String(40), default="choice", server_default="choice"
+    )
+    exercise: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     question: Mapped[str] = mapped_column(Text)
     answer: Mapped[str] = mapped_column(Text)
     language: Mapped[str | None] = mapped_column(String(20), nullable=True)
