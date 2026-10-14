@@ -14,6 +14,7 @@ from .deletion import cleanup_deleted_files
 from .exercises import normalize_text
 from .library import get_or_404
 from .models import Card, CardSource, Document, Explanation, Job, SourcePage, Topic, now
+from .practice import material_fingerprint
 from .quiz import (
     correct_indices,
     preparation_job,
@@ -173,7 +174,7 @@ def ingest(database, ai, payload):
 def generate(database, ai, payload, job_id=None):
     if payload.get("target_language"):
         raise ValueError("Перевод отключён. Создайте новую задачу на исходном языке")
-    results, reasons, unsupported = [], [], []
+    results, reasons, unsupported, outcomes = [], [], [], []
     topics = payload["topics"]
     kinds = payload.get("question_types", ["choice"])
     quotas = generation_quotas([t["id"] for t in topics], kinds, payload["count"])
@@ -200,6 +201,7 @@ def generate(database, ai, payload, job_id=None):
         ):
             raise ValueError("Модель нарушила типы или квоты вопросов")
         rejected = set()
+        topic_unsupported = []
         for item in getattr(generated, "unsupported_types", []):
             if (
                 item.question_type not in kinds
@@ -210,7 +212,17 @@ def generate(database, ai, payload, job_id=None):
                 raise ValueError("Модель вернула противоречивый неподходящий тип")
             rejected.add(item.question_type)
             unsupported.append({"question_type": item.question_type, "reason": item.reason.strip()})
+            topic_unsupported.append(
+                {"question_type": item.question_type, "reason": item.reason.strip()}
+            )
             reasons.append(item.reason.strip())
+        outcomes.append(
+            {
+                "topic_id": topic["id"],
+                "source_fingerprint": topic.get("material_fingerprint", ""),
+                "unsupported_types": topic_unsupported,
+            }
+        )
         if generated.insufficient_reason:
             reasons.append(generated.insufficient_reason)
         for card in generated.cards:
@@ -229,7 +241,7 @@ def generate(database, ai, payload, job_id=None):
                 raise ValueError("Модель изменила язык исходного материала")
             card.language = card.language or (next(iter(languages)) if languages else None)
             results.append((card, topic["sources"]))
-    return results, reasons, unsupported
+    return results, reasons, unsupported, outcomes
 
 
 def run_job(database, ai, identifier):
@@ -249,8 +261,13 @@ def run_job(database, ai, identifier):
         elif kind == "youtube":
             result = ingest_youtube(database, payload)
         elif kind == "generate":
-            cards, reasons, unsupported = generate(database, ai, payload, identifier)
-            result = {"card_ids": [], "warnings": reasons, "unsupported_types": unsupported}
+            cards, reasons, unsupported, outcomes = generate(database, ai, payload, identifier)
+            result = {
+                "card_ids": [],
+                "warnings": reasons,
+                "unsupported_types": unsupported,
+                "outcomes_by_topic": outcomes,
+            }
         elif kind == "prepare_quiz":
             with database.session() as db:
                 validate_preparation(db, payload)
@@ -496,7 +513,14 @@ def start_generation(body: GenerateBody, request: Request):
                 )
             ]
             length += sum(len(c["question"]) + len(c["answer"]) for c in existing)
-            topics.append({"id": identifier, "sources": sources, "existing": existing})
+            topics.append(
+                {
+                    "id": identifier,
+                    "sources": sources,
+                    "existing": existing,
+                    "material_fingerprint": material_fingerprint(db, identifier),
+                }
+            )
         if length > 100000:
             raise HTTPException(
                 422, "Материалы превышают 100 000 символов. Выберите меньше документов"

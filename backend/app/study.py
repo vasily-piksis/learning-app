@@ -1,23 +1,41 @@
 import random
+from dataclasses import asdict
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
 from sqlalchemy import delete, func, select, text
 
+from . import exercises
 from .auth import require_user
+from .exercises import QuestionType
 from .jobs import card_data, job_data
 from .library import get_or_404
 from .models import Attempt, Card, Explanation, Job, SessionCard, StudySession, Topic, now
-from .quiz import correct_indices, quiz_ready
+from .practice import ready_for_quiz
+from .quiz import correct_indices
 from .sources import available_sources
 
 router = APIRouter(prefix="/api/study", dependencies=[Depends(require_user)])
 
 
 class StartBody(BaseModel):
-    topic_ids: list[int] = Field(min_length=1, max_length=30)
+    model_config = ConfigDict(extra="forbid")
+    topic_ids: list[StrictInt] = Field(min_length=1, max_length=30)
     mode: Literal["quiz", "flashcard"]
+    question_types: list[QuestionType] | None = Field(default=None, min_length=1, max_length=6)
+
+    @model_validator(mode="after")
+    def distinct_selection(self):
+        if len(set(self.topic_ids)) != len(self.topic_ids) or any(i < 1 for i in self.topic_ids):
+            raise ValueError("Выберите разные темы")
+        if self.question_types is not None and len(set(self.question_types)) != len(
+            self.question_types
+        ):
+            raise ValueError("Выберите разные способы проверки")
+        if self.mode == "flashcard" and self.question_types is not None:
+            raise ValueError("Флеш-карты используют вопросы всех типов")
+        return self
 
 
 class DeleteHistoryBody(BaseModel):
@@ -29,10 +47,15 @@ class PositionBody(BaseModel):
 
 
 class AnswerBody(PositionBody):
+    model_config = ConfigDict(extra="forbid")
     idempotency_key: str = Field(min_length=1, max_length=80)
     choice: StrictInt | None = Field(default=None, ge=0)
     choices: list[StrictInt] | None = None
     remembered: bool | None = None
+    text: StrictStr | None = Field(default=None, max_length=1000)
+    gap_answers: dict[StrictStr, StrictStr] | None = None
+    pairs: list[dict[StrictStr, StrictStr]] | None = Field(default=None, max_length=8)
+    order: list[StrictStr] | None = Field(default=None, max_length=20)
 
 
 class ExplainBody(PositionBody):
@@ -61,19 +84,23 @@ def at_position(db, session_id, position):
 
 
 def public_card(snapshot, revealed=False, db=None):
-    value = {
-        **snapshot,
-        "sources": [{k: v for k, v in s.items() if k != "text"} for s in snapshot["sources"]],
-    }
+    value = exercises.public_exercise(snapshot, revealed)
     if db is not None:
         value["sources"] = available_sources(db, value["sources"])
-    value["correct_indices"] = correct_indices(snapshot)
-    value["multiple_answers"] = len(value["correct_indices"]) > 1
-    if not revealed:
-        value.pop("correct_indices", None)
-        value.pop("answer", None)
-        value.pop("correct_index", None)
+    value["multiple_answers"] = len(correct_indices(snapshot)) > 1
+    if revealed:
+        value["correct_indices"] = correct_indices(snapshot)
     return value
+
+
+def stored_submission(attempt, snapshot):
+    value = {k: v for k, v in attempt.value.items() if k != "_grading"}
+    return exercises.canonical_submission(snapshot, value)
+
+
+def grading_data(attempt):
+    grading = attempt.value.get("_grading", {})
+    return {"parts": grading.get("parts", []), "message_code": grading.get("message_code")}
 
 
 def session_data(db, session, full=False):
@@ -88,6 +115,20 @@ def session_data(db, session, full=False):
         )
     )
     topic_names = [db.get(Topic, identifier).name for identifier in session.topic_ids]
+    type_column = func.coalesce(SessionCard.snapshot["question_type"].as_string(), "choice")
+    types = {
+        kind: amount
+        for kind, amount in db.execute(
+            select(type_column, func.count(SessionCard.id))
+            .where(SessionCard.session_id == session.id)
+            .group_by(type_column)
+        )
+    }
+    method = (
+        "flashcard"
+        if session.mode == "flashcard"
+        else (next(iter(types)) if len(types) == 1 else "mixed")
+    )
     result = {
         "id": session.id,
         "topic_ids": session.topic_ids,
@@ -102,6 +143,8 @@ def session_data(db, session, full=False):
         "answered": len(attempts),
         "correct": sum(a.correct for a in attempts),
         "created": session.created.isoformat(),
+        "question_types": types,
+        "practice_method": method,
     }
     if full:
         result["card"] = None
@@ -113,7 +156,13 @@ def session_data(db, session, full=False):
                     "position": answered_card.position,
                     "card": public_card(answered_card.snapshot, True, db),
                     "correct": attempt.correct,
-                    **attempt.value,
+                    "submission": stored_submission(attempt, answered_card.snapshot),
+                    "choice": attempt.value.get(
+                        "choice", (attempt.value.get("choices") or [None])[0]
+                    ),
+                    "choices": attempt.value.get("choices"),
+                    "remembered": attempt.value.get("remembered"),
+                    **grading_data(attempt),
                 }
             )
         result["review"].sort(key=lambda item: item["position"])
@@ -133,7 +182,11 @@ def new_session(db, user_id, topics, mode, snapshots):
     db.add(value)
     db.flush()
     for position, snapshot in enumerate(snapshots):
-        db.add(SessionCard(session_id=value.id, position=position, snapshot=snapshot))
+        db.add(
+            SessionCard(
+                session_id=value.id, position=position, snapshot=exercises.build_snapshot(snapshot)
+            )
+        )
     db.flush()
     return session_data(db, value, full=True)
 
@@ -153,30 +206,61 @@ def start(body: StartBody, request: Request):
                 )
             )
         )
-        if not cards:
-            raise HTTPException(422, "Сначала сохраните карточки выбранного формата")
-        if len(cards) > 300:
-            raise HTTPException(
-                422, "Для одного занятия выберите меньше тем (максимум 300 карточек)"
-            )
         if body.mode == "quiz":
+            ready = [card for card in cards if ready_for_quiz(card)]
+            types_by_topic = [
+                {c.question_type for c in ready if c.topic_id == topic_id}
+                for topic_id in body.topic_ids
+            ]
+            selected = body.question_types
+            if selected is None:
+                selected = sorted(set.intersection(*types_by_topic)) if types_by_topic else []
+                if not selected:
+                    raise HTTPException(
+                        422,
+                        {
+                            "message": "Нет общего готового способа. Выберите способы и подготовьте задания",
+                            "missing_pairs": [],
+                            "action": "prepare",
+                        },
+                    )
             missing = [
-                card_data(db, card, include_text=True)
-                for card in sorted(cards, key=lambda c: c.id)
-                if not quiz_ready(card)
+                {"topic_id": topic_id, "question_type": kind}
+                for topic_id in body.topic_ids
+                for kind in selected
+                if not any(c.topic_id == topic_id and c.question_type == kind for c in ready)
             ]
             if missing:
                 raise HTTPException(
                     422,
                     {
-                        "message": "Сначала подготовьте и сохраните варианты",
-                        "action": "prepare-options",
-                        "missing_pairs": [
-                            {"topic_id": topic_id, "question_type": "choice"}
-                            for topic_id in sorted({c["topic_id"] for c in missing})
-                        ],
+                        "message": "Подготовьте задания для выбранных тем и способов",
+                        "missing_pairs": missing,
+                        "action": "prepare",
                     },
                 )
+            cards = [c for c in ready if c.question_type in selected]
+        else:
+            missing = [
+                {"topic_id": topic_id, "question_type": "flashcard"}
+                for topic_id in body.topic_ids
+                if not any(c.topic_id == topic_id and c.answer.strip() for c in cards)
+            ]
+            if missing:
+                raise HTTPException(
+                    422,
+                    {
+                        "message": "Сначала сохраните вопросы выбранных тем",
+                        "missing_pairs": missing,
+                        "action": "prepare",
+                    },
+                )
+        if not cards:
+            raise HTTPException(422, "Сначала сохраните вопросы")
+        if len(cards) > 300:
+            raise HTTPException(
+                422, "Для одного занятия выберите меньше тем (максимум 300 вопросов)"
+            )
         snapshots = [card_data(db, card, include_text=True) for card in cards]
         if body.mode == "flashcard":
             for snapshot in snapshots:
@@ -280,6 +364,8 @@ def feedback(attempt, card, session_id, db=None):
         "correct": attempt.correct,
         "card": public_card(card.snapshot, True, db),
         "next_position": card.position + 1,
+        "submission": stored_submission(attempt, card.snapshot),
+        **grading_data(attempt),
     }
 
 
@@ -290,42 +376,29 @@ def answer(identifier: int, body: AnswerBody, request: Request):
         db.execute(text("BEGIN IMMEDIATE"))
         session = owned(db, identifier, user.id)
         card = at_position(db, identifier, body.position)
-        value = {"choice": body.choice, "remembered": body.remembered}
-        if body.choices is not None:
-            value["choices"] = sorted(body.choices)
+        try:
+            value = exercises.canonical_submission(
+                card.snapshot,
+                body.model_dump(exclude={"position", "idempotency_key"}, exclude_none=True),
+            )
+        except exercises.InvalidSubmission as error:
+            raise HTTPException(422, str(error)) from error
         prior = db.scalar(
             select(Attempt).where(
                 Attempt.user_id == user.id, Attempt.idempotency_key == body.idempotency_key
             )
         )
         if prior:
-            if prior.session_card_id != card.id or prior.value != value:
+            if prior.session_card_id != card.id or stored_submission(prior, card.snapshot) != value:
                 raise HTTPException(409, "Идентификатор запроса уже использован для другого ответа")
             return feedback(prior, card, session.id, db)
         if session.position != body.position or session.status != "active":
             raise HTTPException(409, "Ответ уже сохранён в другой вкладке. Обновите занятие")
-        if session.mode == "quiz":
-            selected = (
-                body.choices
-                if body.choices is not None
-                else ([] if body.choice is None else [body.choice])
-            )
-            if (
-                not selected
-                or len(set(selected)) != len(selected)
-                or any(not 0 <= index < len(card.snapshot["options"]) for index in selected)
-                or body.remembered is not None
-                or (body.choices is not None and body.choice is not None)
-                or (len(correct_indices(card.snapshot)) == 1 and len(selected) != 1)
-            ):
-                raise HTTPException(422, "Выберите допустимые варианты ответа")
-            correct = set(selected) == set(correct_indices(card.snapshot))
-        else:
-            if not card.revealed:
-                raise HTTPException(409, "Сначала откройте ответ")
-            if body.remembered is None or body.choice is not None or body.choices is not None:
-                raise HTTPException(422, "Отметьте, помните ли ответ")
-            correct = body.remembered
+        if session.mode == "flashcard" and not card.revealed:
+            raise HTTPException(409, "Сначала откройте ответ")
+        grade = exercises.grade_answer(card.snapshot, value)
+        correct = grade.correct
+        value = {**value, "_grading": {"version": 1, **asdict(grade)}}
         attempt = Attempt(
             user_id=user.id,
             session_card_id=card.id,
