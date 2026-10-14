@@ -220,3 +220,41 @@ def test_private_preparation_job_ids_do_not_leak_in_shared_topic_availability(cl
     value = client.get(f"/api/topics/{topic}").json()["practice_availability"]
     assert value["written"]["ready_count"] == 1
     assert value["gap"]["preparation_job_id"] is None
+
+
+def test_later_supported_generation_clears_old_unsupported_method_outcome(client, app):
+    from app.jobs import run_job
+    from app.schemas import Generated, UnsupportedType
+    from test_exercise_generation import setup_generation
+
+    topic = setup_generation(client, app)
+    supported = app.state.ai.generate
+    app.state.ai.generate = lambda *args, **kwargs: Generated(
+        cards=[],
+        insufficient_reason=None,
+        unsupported_types=[
+            UnsupportedType(question_type="ending", reason="Not enough grammar material")
+        ],
+    )
+    body = {
+        "topic_ids": [topic],
+        "mode": "quiz",
+        "question_types": ["ending"],
+        "practice_goal": "language",
+        "count": 1,
+        "idempotency_key": "unsupported-first",
+    }
+    first = client.post("/api/generate", json=body).json()
+    run_job(app.state.db, app.state.ai, first["id"])
+    availability = client.get(f"/api/topics/{topic}").json()["practice_availability"]["ending"]
+    assert availability["last_outcome"]["reason"] == "Not enough grammar material"
+    app.state.ai.generate = supported
+    second = client.post(
+        "/api/generate", json={**body, "idempotency_key": "supported-later"}
+    ).json()
+    run_job(app.state.db, app.state.ai, second["id"])
+    cards = client.get(f"/api/cards?job_id={second['id']}").json()
+    assert len(cards) == 1, client.get(f"/api/jobs/{second['id']}").json()
+    client.post("/api/cards/save", json={"card_ids": [cards[0]["id"]]})
+    availability = client.get(f"/api/topics/{topic}").json()["practice_availability"]["ending"]
+    assert availability["ready_count"] == 1 and availability["last_outcome"] is None

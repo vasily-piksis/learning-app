@@ -2,7 +2,9 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { beforeEach, expect, test, vi } from "vitest"
-import ExerciseInput from "../src/features/exercises/ExerciseInput"
+import ExerciseInput, {
+  completeAnswer,
+} from "../src/features/exercises/ExerciseInput"
 import StartStudy, { Preparation } from "../src/features/StartStudy"
 import Study from "../src/features/Study"
 import type {
@@ -500,4 +502,20 @@ test("a definitive validation error unlocks text so a corrected answer gets a ne
   await screen.findByText("Верно!")
   expect(posts[1].text).toBe("Nil")
   expect(posts[1].idempotency_key).not.toBe(posts[0].idempotency_key)
+})
+
+test("gap identifiers cannot read inherited object properties", async () => {
+  const current = card("gap", {
+    segments: [{ gap_id: "safe" }, { text: " " }, { gap_id: "constructor" }],
+    gaps: [{ id: "safe" }, { id: "constructor" }],
+    case_sensitive: false,
+  })
+  expect(completeAnswer(current, { gap_answers: { safe: "x" } })).toBe(false)
+  render(<Input card={current} />)
+  expect(screen.getByRole("textbox", { name: "Пропуск 2" })).toHaveValue("")
+  await userEvent.type(screen.getByRole("textbox", { name: "Пропуск 1" }), "x")
+  await userEvent.type(screen.getByRole("textbox", { name: "Пропуск 2" }), "y")
+  expect(screen.getByTestId("submission")).toHaveTextContent(
+    '"constructor":"y"'
+  )
 })

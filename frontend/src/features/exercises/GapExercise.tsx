@@ -34,7 +34,11 @@ export default function GapExercise({
               autoComplete="off"
               spellCheck={false}
               disabled={disabled}
-              value={answers[segment.gap_id] || ""}
+              value={
+                Object.hasOwn(answers, segment.gap_id)
+                  ? answers[segment.gap_id]
+                  : ""
+              }
               onChange={(e) =>
                 onChange({
                   gap_answers: { ...answers, [segment.gap_id]: e.target.value },

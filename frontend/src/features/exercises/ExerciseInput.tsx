@@ -23,7 +23,12 @@ export function completeAnswer(card: Card, value: ExerciseSubmission | null) {
         !!exercise &&
         "gaps" in exercise &&
         "gap_answers" in value &&
-        exercise.gaps.every((g) => value.gap_answers[g.id]?.trim())
+        exercise.gaps.every(
+          (g) =>
+            Object.hasOwn(value.gap_answers, g.id) &&
+            typeof value.gap_answers[g.id] === "string" &&
+            !!value.gap_answers[g.id].trim()
+        )
       )
     case "matching":
       return (

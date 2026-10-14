@@ -49,7 +49,9 @@ def repository(tmp_path):
     (root / "compose.override.yaml").write_text("services: {}\n")
     (root / "data").mkdir()
     (root / "data/photo.jpg").write_bytes(b"private uploaded file")
-    (upstream / "start.sh").write_text("#!/bin/sh\nset -eu\necho new > restarted\n")
+    (upstream / "start.sh").write_text(
+        '#!/bin/sh\nset -eu\nsh scripts/backup.sh "$PWD/backups" --keep-stopped\necho new > restarted\n'
+    )
     git(upstream, "add", "start.sh")
     git(upstream, "commit", "-m", "New application version")
     return root, upstream
@@ -77,7 +79,7 @@ def test_update_uses_new_start_script_and_preserves_env_config_and_files(tmp_pat
 
 
 @pytest.mark.parametrize("failure", ["dirty", "backup"])
-def test_unsafe_update_stops_before_git_pull_and_restart(tmp_path, failure, monkeypatch):
+def test_unsafe_update_never_restarts_new_app_without_backup(tmp_path, failure, monkeypatch):
     module = load_deploy()
     root, _ = repository(tmp_path)
     module.ROOT = root
@@ -89,7 +91,10 @@ def test_unsafe_update_stops_before_git_pull_and_restart(tmp_path, failure, monk
         monkeypatch.setenv("TEST_BACKUP_FAILURE", "1")
     with pytest.raises((RuntimeError, subprocess.CalledProcessError)):
         module.update()
-    assert git(root, "rev-parse", "HEAD") == before
+    if failure == "dirty":
+        assert git(root, "rev-parse", "HEAD") == before
+    else:
+        assert git(root, "rev-parse", "HEAD") != before
     assert not (root / "restarted").exists()
 
 
@@ -140,3 +145,62 @@ def test_plain_docker_installation_does_not_require_traefik(monkeypatch):
     assert (
         module.runtime_environment({"services": {"app": {}}})["FORWARDED_ALLOW_IPS"] == "127.0.0.1"
     )
+
+
+def test_start_never_opens_migrated_volume_with_old_image_without_restoring_backup(
+    tmp_path, monkeypatch
+):
+    import json
+
+    module = load_deploy()
+    module.ROOT = tmp_path
+    data = tmp_path / "private-data"
+    data.write_bytes(b"old schema and files")
+    backup = tmp_path / "backups" / "cold.tar.gz"
+    backup.parent.mkdir()
+    backup.write_bytes(b"validated archive")
+    events = []
+
+    def capture(command, **kwargs):
+        events.append(command)
+        if command[:3] == ["docker", "compose", "config"]:
+            return json.dumps(
+                {
+                    "name": "learning-qa",
+                    "services": {"app": {"image": "new-image"}},
+                    "volumes": {"learning-data": {"name": "learning-qa-data"}},
+                }
+            )
+        if command[:3] == ["docker", "compose", "ps"]:
+            return "old-container"
+        if command[:2] == ["docker", "inspect"]:
+            return "old-image"
+        if command[:2] == ["sh", "scripts/backup.sh"]:
+            return str(backup)
+        return ""
+
+    def run(command, **kwargs):
+        events.append(command)
+        if "Database(Settings())" in " ".join(command):
+            data.write_bytes(b"partially migrated")
+            raise subprocess.CalledProcessError(2, command)
+
+    def restore(archive, volume, image, **kwargs):
+        assert archive == backup and volume == "learning-qa-data" and image == "old-image"
+        data.write_bytes(b"old schema and files")
+        events.append(["restored backup"])
+
+    monkeypatch.setattr(module, "capture", capture)
+    monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(module, "restore_backup", restore, raising=False)
+    with pytest.raises(subprocess.CalledProcessError):
+        module.start()
+    assert data.read_bytes() == b"old schema and files"
+    build = next(i for i, e in enumerate(events) if e[:3] == ["docker", "compose", "build"])
+    cold = next(i for i, e in enumerate(events) if e[:2] == ["sh", "scripts/backup.sh"])
+    assert build < cold and "--keep-stopped" in events[cold]
+    restored = events.index(["restored backup"])
+    old_start = next(
+        i for i, e in enumerate(events) if e[:2] == ["docker", "compose"] and "up" in e
+    )
+    assert restored < old_start

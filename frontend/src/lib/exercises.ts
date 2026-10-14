@@ -1,5 +1,12 @@
 import { t } from "@/i18n"
-import type { QuestionType, FullExercise, GapExercise } from "@/types"
+import { unicodeCasefold, pythonWhitespace } from "./unicode-casefold"
+import type {
+  QuestionType,
+  FullExercise,
+  GapExercise,
+  Card,
+  Feedback,
+} from "@/types"
 
 export const questionTypes: QuestionType[] = [
   "choice",
@@ -28,8 +35,19 @@ export function gapProjection(value: GapExercise): GapExercise {
       const answers = value.accepted_combinations
         .map((row) => row[index] || "")
         .filter((answer) => {
-          const key = answer.normalize("NFC").trim().replace(/\s+/g, " ")
-          const normalized = value.case_sensitive ? key : key.toLowerCase()
+          const key = Array.from(answer, (char) =>
+            pythonWhitespace.has(char) ? " " : char
+          )
+            .join("")
+            .split(" ")
+            .filter(Boolean)
+            .join(" ")
+            .normalize("NFC")
+          const normalized = value.case_sensitive
+            ? key
+            : Array.from(key, (char) => unicodeCasefold[char] ?? char)
+                .join("")
+                .normalize("NFC")
           if (seen.has(normalized)) return false
           seen.add(normalized)
           return true
@@ -81,10 +99,7 @@ export function methodLabel(method: string) {
   if (method === "mixed") return t("Смешанная практика")
   return questionLabel(method as QuestionType)
 }
-export function submissionText(
-  card: import("@/types").Card,
-  value?: import("@/types").Feedback["submission"]
-) {
+export function submissionText(card: Card, value?: Feedback["submission"]) {
   if (!value) return ""
   if ("text" in value) return value.text
   if ("gap_answers" in value) return Object.values(value.gap_answers).join("; ")

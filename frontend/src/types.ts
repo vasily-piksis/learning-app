@@ -127,6 +127,7 @@ export type Job = {
   result: {
     card_ids?: number[]
     warnings?: string[]
+    model_warnings?: string[]
     explanation_id?: number
     text?: string
     example?: string | null

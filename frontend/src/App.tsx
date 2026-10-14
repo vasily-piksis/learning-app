@@ -1,6 +1,6 @@
 import { t, useLocale } from "@/i18n"
 import LanguageSwitcher from "@/components/LanguageSwitcher"
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import {
   BookOpen,
   LibraryBig,
@@ -14,13 +14,19 @@ import { ErrorNotice, Loading } from "@/components/shared"
 import { api, APIError, errorText, setCsrf, navigate } from "@/api"
 import type { User } from "@/types"
 import Login from "@/features/Login"
-import Library from "@/features/Library"
-import Generation, { GenerationResult } from "@/features/Generation"
-import Topic from "@/features/Topic"
+const Library = lazy(() => import("@/features/Library"))
 import { Preparation } from "@/features/StartStudy"
-import Study from "@/features/Study"
-import History from "@/features/History"
-import Profile from "@/features/Profile"
+const Profile = lazy(() => import("@/features/Profile"))
+
+const Generation = lazy(() => import("@/features/Generation"))
+const GenerationResult = lazy(() =>
+  import("@/features/Generation").then((module) => ({
+    default: module.GenerationResult,
+  }))
+)
+const Topic = lazy(() => import("@/features/Topic"))
+const Study = lazy(() => import("@/features/Study"))
+const History = lazy(() => import("@/features/History"))
 
 function useRoute() {
   const [hash, setHash] = useState(
@@ -141,13 +147,15 @@ export default function App() {
         </nav>
         <div className="account">
           <LanguageSwitcher />
-          <Profile
-            user={user}
-            onChanged={(value) => {
-              setUser(value)
-              setCsrf(value.csrf_token)
-            }}
-          />
+          <Suspense fallback={<span>{user.display_name}</span>}>
+            <Profile
+              user={user}
+              onChanged={(value) => {
+                setUser(value)
+                setCsrf(value.csrf_token)
+              }}
+            />
+          </Suspense>
           <Button
             size="icon"
             variant="ghost"
@@ -169,48 +177,52 @@ export default function App() {
       </header>
       <main id="main" tabIndex={-1} className="main-content">
         <ErrorNotice message={error} />
-        {page === "generation" ||
-        (page === "generate" &&
-          new URLSearchParams(route.split("?")[1]).has("job")) ? (
-          <GenerationResult
-            key={route}
-            id={Number(
-              page === "generation"
-                ? kind
-                : new URLSearchParams(route.split("?")[1]).get("job")
-            )}
-          />
-        ) : page === "prepare" ? (
-          <Preparation key={kind} id={Number(kind)} />
-        ) : page === "library" && kind === "topic" ? (
-          <Topic
-            key={`${id}/${section}/${cardId}`}
-            id={Number(id)}
-            section={section}
-            cardId={section !== "create" && cardId ? Number(cardId) : undefined}
-            createMethod={section === "create" ? cardId : undefined}
-          />
-        ) : page === "generate" ? (
-          <Generation
-            key={route}
-            initialTopics={
-              new URLSearchParams(route.split("?")[1])
-                .get("topics")
-                ?.split(",")
-                .map(Number)
-                .filter(Number.isFinite) || []
-            }
-          />
-        ) : page === "study" ? (
-          <Study key={kind} id={Number(kind)} />
-        ) : page === "history" ? (
-          <History />
-        ) : (
-          <Library
-            subjectId={kind === "subject" ? Number(id) : undefined}
-            displayName={user.display_name}
-          />
-        )}
+        <Suspense fallback={<Loading />}>
+          {page === "generation" ||
+          (page === "generate" &&
+            new URLSearchParams(route.split("?")[1]).has("job")) ? (
+            <GenerationResult
+              key={route}
+              id={Number(
+                page === "generation"
+                  ? kind
+                  : new URLSearchParams(route.split("?")[1]).get("job")
+              )}
+            />
+          ) : page === "prepare" ? (
+            <Preparation key={kind} id={Number(kind)} />
+          ) : page === "library" && kind === "topic" ? (
+            <Topic
+              key={`${id}/${section}/${cardId}`}
+              id={Number(id)}
+              section={section}
+              cardId={
+                section !== "create" && cardId ? Number(cardId) : undefined
+              }
+              createMethod={section === "create" ? cardId : undefined}
+            />
+          ) : page === "generate" ? (
+            <Generation
+              key={route}
+              initialTopics={
+                new URLSearchParams(route.split("?")[1])
+                  .get("topics")
+                  ?.split(",")
+                  .map(Number)
+                  .filter(Number.isFinite) || []
+              }
+            />
+          ) : page === "study" ? (
+            <Study key={kind} id={Number(kind)} />
+          ) : page === "history" ? (
+            <History />
+          ) : (
+            <Library
+              subjectId={kind === "subject" ? Number(id) : undefined}
+              displayName={user.display_name}
+            />
+          )}
+        </Suspense>
       </main>
       <footer className="app-footer">
         <span>

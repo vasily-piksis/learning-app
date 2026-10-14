@@ -92,6 +92,17 @@ class EndingExercise(GapExercise):
     def one_ending(self):
         if len(self.gaps) != 1:
             raise ValueError("У окончания должен быть ровно один пропуск")
+        slot = next(i for i, segment in enumerate(self.segments) if isinstance(segment, GapSegment))
+        prefix = (
+            self.segments[slot - 1].text
+            if slot > 0 and isinstance(self.segments[slot - 1], TextSegment)
+            else ""
+        )
+        prefix = unicodedata.normalize("NFC", prefix)
+        while prefix and unicodedata.category(prefix[-1]).startswith("M"):
+            prefix = prefix[:-1]
+        if not prefix or not prefix[-1].isalpha():
+            raise ValueError("Перед окончанием должна быть видимая основа слова без пробела")
         return self
 
 

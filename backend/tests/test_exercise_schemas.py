@@ -92,3 +92,26 @@ def test_gap_complete_solution_includes_every_approved_combination():
         )
         == "I am / we are"
     )
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        [{"gap_id": "ending"}],
+        [{"text": "Choose an ending: "}, {"gap_id": "ending"}],
+        [{"text": ""}, {"gap_id": "ending"}],
+    ],
+)
+def test_ending_requires_a_visible_word_stem_directly_before_the_slot(segments):
+    from app.exercises import validate_exercise
+
+    with pytest.raises(ValueError):
+        validate_exercise(
+            "ending",
+            {
+                "segments": segments,
+                "gaps": [{"id": "ending", "accepted_answers": ["u"]}],
+                "accepted_combinations": [["u"]],
+                "case_sensitive": False,
+            },
+        )

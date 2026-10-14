@@ -84,6 +84,7 @@ def practice_availability(db, topic_id, user_id=None):
     if user_id is None:
         return result
     current = material_fingerprint(db, topic_id)
+    seen_outcomes = set()
     for job in db.scalars(
         select(Job)
         .where(
@@ -120,7 +121,8 @@ def practice_availability(db, topic_id, user_id=None):
                 item["preparation_job_id"], item["preparation_status"] = job.id, job.status
             outcomes = (job.result or {}).get("outcomes_by_topic", [])
             outcome = next((v for v in outcomes if v["topic_id"] == topic_id), None)
-            if outcome and item["last_outcome"] is None:
+            if outcome and method not in seen_outcomes:
+                seen_outcomes.add(method)
                 reason = next(
                     (
                         v["reason"]

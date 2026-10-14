@@ -450,3 +450,32 @@ test.each([true, false])(
     else expect(await screen.findByText("Карточки не созданы")).toBeVisible()
   }
 )
+
+test("model warnings retain source language when the interface is Polish", async () => {
+  const { default: Drafts } = await import("../src/features/Drafts")
+  localStorage.setItem("learning-ui-language", "pl")
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response("[]", { headers: { "Content-Type": "application/json" } })
+    )
+  )
+  render(
+    <Drafts
+      job={{
+        id: 10,
+        kind: "generate",
+        status: "succeeded",
+        error: null,
+        created: "2026-10-14",
+        topic_ids: [1],
+        result: {
+          warnings: ["Карточки не созданы"],
+          model_warnings: ["Карточки не созданы"],
+        },
+      }}
+    />
+  )
+  expect(await screen.findByText("Карточки не созданы")).toBeVisible()
+})

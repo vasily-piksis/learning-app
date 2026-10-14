@@ -270,6 +270,7 @@ def run_job(database, ai, identifier):
             result = {
                 "card_ids": [],
                 "warnings": reasons,
+                "model_warnings": reasons.copy(),
                 "unsupported_types": unsupported,
                 "outcomes_by_topic": outcomes,
             }

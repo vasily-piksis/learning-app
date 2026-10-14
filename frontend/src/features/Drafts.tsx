@@ -49,7 +49,11 @@ export default function Drafts({ job }: { job: Job }) {
       {job.result?.warnings?.map((warning, i) => (
         <Alert key={i}>
           <AlertTitle>{t("Материалов оказалось меньше")}</AlertTitle>
-          <AlertDescription>{systemMessage(warning)}</AlertDescription>
+          <AlertDescription>
+            {job.result?.model_warnings?.includes(warning)
+              ? warning
+              : systemMessage(warning)}
+          </AlertDescription>
         </Alert>
       ))}
       <ErrorNotice message={cards.error || error} retry={cards.refetch} />

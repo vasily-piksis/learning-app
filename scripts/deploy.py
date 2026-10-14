@@ -5,6 +5,7 @@ import fcntl
 import ipaddress
 import json
 import os
+import re
 import shutil
 
 # This operator tool launches fixed Docker/Git commands, without shell or HTTP input.
@@ -64,16 +65,69 @@ def runtime_environment(config):
     return environment
 
 
+def cold_backup(backups, environment):
+    output = capture(["sh", "scripts/backup.sh", str(backups), "--keep-stopped"], env=environment)
+    archive = Path(output.splitlines()[-1]).resolve()
+    if (
+        not archive.is_relative_to(backups.resolve())
+        or not archive.is_file()
+        or archive.is_symlink()
+    ):
+        raise RuntimeError("Cold backup did not produce a private archive")
+    return archive
+
+
+def restore_backup(archive, volume, image, **kwargs):
+    source = (ROOT / "scripts/restore_volume.py").read_text()
+    run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--label",
+            "traefik.enable=false",
+            "--mount",
+            f"type=volume,src={volume},dst=/data",
+            "--mount",
+            f"type=bind,src={archive},dst=/restore/cold.tar.gz,readonly",
+            "--entrypoint",
+            "python",
+            image,
+            "-c",
+            source,
+            "/restore/cold.tar.gz",
+        ],
+        **kwargs,
+    )
+
+
+def previous_image_start(previous, environment):
+    rollback = private_backups() / "rollback.json"
+    rollback.write_text(json.dumps({"services": {"app": {"image": previous}}}))
+    rollback.chmod(0o600)
+    files = ["-f", "compose.yaml"]
+    if (ROOT / "compose.override.yaml").exists():
+        files += ["-f", "compose.override.yaml"]
+    run(
+        ["docker", "compose", *files, "-f", str(rollback), "up", "-d", "--no-build", "--wait"],
+        env=environment,
+    )
+
+
 def start():
     config = json.loads(capture(["docker", "compose", "config", "--format", "json"]))
     environment = runtime_environment(config)
     image = config["services"]["app"].get("image", config["name"] + "-app")
-    identifier = capture(["docker", "compose", "ps", "-q", "app"])
-    previous = None
-    if identifier:
-        previous = capture(["docker", "inspect", identifier, "--format", "{{.Image}}"])
+    volume = config["volumes"]["learning-data"]["name"]
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", volume):
+        raise RuntimeError("Expected a named persistent data volume")
+    identifier = capture(["docker", "compose", "ps", "-aq", "app"])
+    previous = (
+        capture(["docker", "inspect", identifier, "--format", "{{.Image}}"]) if identifier else None
+    )
     run(["docker", "compose", "build", "app"], env=environment)
-    # Verify import/startup as the non-root app user without exposing family data or credentials.
     capture(
         [
             "docker",
@@ -90,31 +144,61 @@ def start():
             "from app.main import production_app; production_app()",
         ]
     )
+    archive = None
     try:
+        volume_exists = bool(
+            capture(["docker", "volume", "inspect", volume, "--format", "{{.Name}}"])
+        )
+    except subprocess.CalledProcessError:
+        volume_exists = False
+    if previous or volume_exists:
+        archive = cold_backup(private_backups(), environment)
+    try:
+        # Only migrations: no HTTP listener or background model requests before the cold backup gate.
+        run(
+            [
+                "docker",
+                "compose",
+                "run",
+                "-T",
+                "--interactive=false",
+                "--rm",
+                "--no-deps",
+                "--label",
+                "traefik.enable=false",
+                "--entrypoint",
+                "python",
+                "app",
+                "-c",
+                "from app.config import Settings; from app.db import Database; Database(Settings())",
+            ],
+            env=environment,
+        )
         run(["docker", "compose", "up", "-d", "--no-build", "--wait"], env=environment)
     except subprocess.CalledProcessError:
-        if previous:
-            rollback = private_backups() / "rollback.json"
-            rollback.write_text(json.dumps({"services": {"app": {"image": previous}}}))
-            rollback.chmod(0o600)
-            files = ["-f", "compose.yaml"]
-            if (ROOT / "compose.override.yaml").exists():
-                files += ["-f", "compose.override.yaml"]
-            run(
-                [
-                    "docker",
-                    "compose",
-                    *files,
-                    "-f",
-                    str(rollback),
-                    "up",
-                    "-d",
-                    "--no-build",
-                    "--wait",
-                ],
-                env=environment,
+        run(["docker", "compose", "stop", "app"], env=environment)
+        if archive:
+            failed = cold_backup(private_backups(), environment)
+            metadata = private_backups() / "failed-update.json"
+            metadata.write_text(
+                json.dumps(
+                    {
+                        "previous_image": previous,
+                        "restore_archive": str(archive),
+                        "failed_state_archive": str(failed),
+                    }
+                )
             )
-            print("Previous image restarted; the persistent data volume was retained", flush=True)
+            metadata.chmod(0o600)
+            restore_backup(archive, volume, previous or image, env=environment)
+            if previous:
+                previous_image_start(previous, environment)
+                print("Previous image and its verified cold backup restored", flush=True)
+            else:
+                print(
+                    "Cold backup restored; no previous image was available, so app stays stopped",
+                    flush=True,
+                )
         raise
 
 
@@ -142,8 +226,7 @@ def update():
             # Create with private permissions before writing secret values.
             with open(path, "xb", opener=lambda p, flags: os.open(p, flags, 0o600)) as saved:
                 saved.write(contents)
-        print("Backing up the current server database and uploaded files", flush=True)
-        run(["sh", "scripts/backup.sh", str(backups)])
+        # The newly pulled starter builds first, then takes the final cold backup.
         environment = os.environ.copy()
         environment["GIT_TERMINAL_PROMPT"] = "0"
         run(["git", "pull", "--ff-only"], env=environment, umask=0o022)
