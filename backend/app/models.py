@@ -227,3 +227,23 @@ class JobImage(Base):
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[str] = mapped_column(ForeignKey("image_assets.id"), index=True)
     role: Mapped[str] = mapped_column(String(20), default="candidate")
+
+
+class ImageRequest(Base):
+    __tablename__ = "image_requests"
+    __table_args__ = (
+        UniqueConstraint("job_id", "attempt_no"),
+        UniqueConstraint("user_id", "request_key"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    request_key: Mapped[str] = mapped_column(String(80))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    reserved_at: Mapped[datetime] = mapped_column(index=True)
+    status: Mapped[str] = mapped_column(String(20), default="reserved")
+    model: Mapped[str] = mapped_column(String(200))
+    settings: Mapped[dict] = mapped_column(JSON)
+    usage: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)

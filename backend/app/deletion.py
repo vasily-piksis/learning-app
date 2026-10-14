@@ -143,6 +143,11 @@ def cleanup_deleted_files(database):
 def remove(db, database, documents, cards, topic_id=None, topic_ids=(), subject_id=None):
     removed_topics = set(topic_ids) | ({topic_id} if topic_id is not None else set())
     doc_ids, card_ids = {d.id for d in documents}, {c.id for c in cards}
+    from .image_generation import cancel_image_job
+
+    for job in db.scalars(select(Job).where(Job.kind == "generate_image")):
+        if job.payload.get("card_id") in card_ids:
+            cancel_image_job(db, job)
     for job in db.scalars(select(Job).where(Job.kind == "regenerate")):
         if job.payload.get("card_id") in card_ids or removed_topics.intersection(
             job.payload.get("topic_ids", [])

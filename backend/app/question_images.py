@@ -205,6 +205,9 @@ def apply_updates(db, card, updates, user_id):
             job = db.get(Job, reference.job_id)
             if job:
                 job.result = {**(job.result or {}), "applied_asset_id": asset.id}
+                if job.kind == "generate_image":
+                    job.status, job.error = "succeeded", None
+                    job.result = {**job.result, "can_retry_save": False}
             db.delete(reference)
     db.flush()
 
@@ -345,9 +348,16 @@ def discard(identifier: str, request: Request):
         if asset.stage == "ready":
             raise HTTPException(409, "Текущее изображение нельзя удалить как кандидат")
         asset.stage = "discarded" if asset.stage != "deleted" else "deleted"
-        db.execute(
-            delete(JobImage).where(JobImage.asset_id == asset.id, JobImage.role == "candidate")
-        )
+        for reference in db.scalars(
+            select(JobImage).where(JobImage.asset_id == asset.id, JobImage.role == "candidate")
+        ):
+            job = db.get(Job, reference.job_id)
+            if job and job.kind == "generate_image":
+                from .image_generation import cancel_image_job
+
+                cancel_image_job(db, job)
+            else:
+                db.delete(reference)
         asset.target_card_id, asset.target_version, asset.slot = None, None, None
     cleanup_image_assets(database)
     return {"discarded": True}

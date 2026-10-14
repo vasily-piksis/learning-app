@@ -13,6 +13,7 @@ from .auth import router as auth_router
 from .config import Settings
 from .db import Database
 from .deletion import router as deletion_router
+from .image_generation import router as image_generation_router
 from .jobs import recover_jobs, worker_loop
 from .jobs import router as jobs_router
 from .library import router as library_router
@@ -101,6 +102,7 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
     app.include_router(deletion_router)
     app.include_router(jobs_router)
     app.include_router(question_images_router)
+    app.include_router(image_generation_router)
     app.include_router(regeneration_router)
     app.include_router(study_router)
     app.include_router(youtube_router)

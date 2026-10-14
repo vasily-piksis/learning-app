@@ -99,6 +99,11 @@ def job_data(job, db=None):
     return {
         "id": job.id,
         "kind": job.kind,
+        **(
+            {"card_id": job.payload.get("card_id"), "slot": job.payload.get("slot")}
+            if job.kind == "generate_image"
+            else {}
+        ),
         "status": job.status,
         "error": job.error,
         "result": result,
@@ -115,6 +120,9 @@ def recover_jobs(database):
 
     cleanup_deleted_files(database)
     cleanup_image_assets(database, recover_writing=True)
+    from .image_generation import recover_image_jobs
+
+    recover_image_jobs(database)
     with database.session() as db:
         for job in db.scalars(select(Job).where(Job.status == "running")):
             job.status = "failed"
@@ -259,6 +267,11 @@ def run_job(database, ai, identifier):
         job = db.get(Job, identifier)
         kind, payload, user_id = job.kind, job.payload, job.user_id
     try:
+        if kind == "generate_image":
+            from .image_generation import run_image_job
+
+            run_image_job(database, identifier)
+            return
         if kind == "regenerate":
             from .regeneration import run_regeneration
 
@@ -432,7 +445,10 @@ def job(identifier: int, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         value = get_or_404(db, Job, identifier)
-        if value.kind in {"explain", "prepare_quiz", "regenerate"} and value.user_id != user.id:
+        if (
+            value.kind in {"explain", "prepare_quiz", "regenerate", "generate_image"}
+            and value.user_id != user.id
+        ):
             raise HTTPException(404, "Не найдено")
         return job_data(value, db)
 
@@ -443,8 +459,13 @@ def retry(identifier: int, request: Request):
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         value = get_or_404(db, Job, identifier)
-        if value.kind in {"explain", "prepare_quiz", "regenerate"} and value.user_id != user.id:
+        if (
+            value.kind in {"explain", "prepare_quiz", "regenerate", "generate_image"}
+            and value.user_id != user.id
+        ):
             raise HTTPException(404, "Не найдено")
+        if value.kind == "generate_image":
+            raise HTTPException(409, "Для картинки используйте отдельный явный платный повтор")
         if value.status != "failed":
             raise HTTPException(409, "Повторить можно только неудачную задачу")
         if value.kind == "regenerate":
