@@ -113,11 +113,15 @@ def test_flashcard_preparation_can_make_multiple_correct_options(client, app):
     app.state.ai.prepare_quiz = lambda snapshot: QuizOptions(
         card_id=snapshot["id"], options=["Нил", "река Нил", "Дон"], correct_indices=[0, 1]
     )
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = client.post("/api/study/prepare-options", json={"topic_ids": [topic]}).json()
     run_job(app.state.db, app.state.ai, job["id"])
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "succeeded"
+    assert (
+        client.post(
+            f"/api/jobs/{job['id']}/save-preparation", json={"card_ids": [c["id"] for c in cards]}
+        ).status_code
+        == 200
+    )
     session = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
     assert session["card"]["multiple_answers"] is True
 

@@ -2,7 +2,6 @@ import random
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictInt
 from sqlalchemy import delete, func, select, text
 
@@ -10,7 +9,7 @@ from .auth import require_user
 from .jobs import card_data, job_data
 from .library import get_or_404
 from .models import Attempt, Card, Explanation, Job, SessionCard, StudySession, Topic, now
-from .quiz import correct_indices, preparation_job, quiz_ready
+from .quiz import correct_indices, quiz_ready
 from .sources import available_sources
 
 router = APIRouter(prefix="/api/study", dependencies=[Depends(require_user)])
@@ -167,8 +166,17 @@ def start(body: StartBody, request: Request):
                 if not quiz_ready(card)
             ]
             if missing:
-                job = preparation_job(db, user.id, sorted(set(body.topic_ids)), missing)
-                return JSONResponse(status_code=202, content={"preparation_job": job_data(job)})
+                raise HTTPException(
+                    422,
+                    {
+                        "message": "Сначала подготовьте и сохраните варианты",
+                        "action": "prepare-options",
+                        "missing_pairs": [
+                            {"topic_id": topic_id, "question_type": "choice"}
+                            for topic_id in sorted({c["topic_id"] for c in missing})
+                        ],
+                    },
+                )
         snapshots = [card_data(db, card, include_text=True) for card in cards]
         if body.mode == "flashcard":
             for snapshot in snapshots:

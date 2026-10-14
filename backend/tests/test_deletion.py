@@ -21,7 +21,16 @@ def test_delete_material_removes_dependent_questions_file_and_allows_reupload(cl
     assert not (app.state.settings.data_dir / "files" / filename).exists()
     assert client.get(f"/api/documents/{document['id']}/download").status_code == 404
     assert (
-        client.patch(f"/api/cards/{cards[0]['id']}", json={**cards[0], "version": 1}).status_code
+        client.patch(
+            f"/api/cards/{cards[0]['id']}",
+            json={
+                **{
+                    k: cards[0][k]
+                    for k in ("question", "answer", "options", "correct_index", "correct_indices")
+                },
+                "version": 1,
+            },
+        ).status_code
         == 404
     )
     with app.state.db.session() as db:
@@ -111,9 +120,7 @@ def test_running_import_does_not_recreate_pages_or_file(client, app):
 
 def test_delete_question_keeps_material_and_cancels_quiz_preparation(client, app):
     topic, cards = saved_cards(client, app, "flashcard", 1)
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = client.post("/api/study/prepare-options", json={"topic_ids": [topic]}).json()
     assert client.delete(f"/api/cards/{cards[0]['id']}").status_code == 200
     run_job(app.state.db, app.state.ai, job["id"])
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "cancelled"

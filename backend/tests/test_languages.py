@@ -1,8 +1,7 @@
-import json
 from types import SimpleNamespace
 
 import pytest
-from app.ai import AI
+from app.ai import AI, AIError
 from app.config import Settings
 from app.jobs import run_job
 from app.models import Card, SourcePage
@@ -15,7 +14,7 @@ from sqlalchemy import select
 @pytest.mark.parametrize(
     "language,text", [("pl", "Obywatel"), ("lt", "Pilietis"), ("en", "Citizen")]
 )
-def test_ai_preserves_source_language_and_only_translates_explicitly(tmp_path, language, text):
+def test_ai_preserves_source_language_and_rejects_translation(tmp_path, language, text):
     class Transport:
         def __init__(self):
             self.responses = self
@@ -37,9 +36,10 @@ def test_ai_preserves_source_language_and_only_translates_explicitly(tmp_path, l
     request = transport.inputs[-1]
     assert "Пиши по-русски" not in request["input"][0]["content"]
     assert "язык" in request["input"][0]["content"]
-    ai.generate(1, sources, "quiz", 1, target_language="ru", existing=[{"question": text}])
-    data = json.loads(transport.inputs[-1]["input"][1]["content"])
-    assert data["target_language"] == "ru" and data["existing"][0]["question"] == text
+    before = len(transport.inputs)
+    with pytest.raises(AIError):
+        ai.generate(1, sources, "quiz", 1, target_language="ru", existing=[{"question": text}])
+    assert len(transport.inputs) == before
     assert sources[0]["text"] == text
     ai.explain({"question": text, "language": language, "sources": sources}, "Explain simply", [])
     assert "Пиши по-русски" not in transport.inputs[-1]["input"][0]["content"]
@@ -86,14 +86,28 @@ def test_language_metadata_and_duplicate_generation(client, app):
     assert client.get(f"/api/jobs/{second['id']}").json()["result"]["warnings"]
     assert app.state.ai.inputs[-1]["existing"][0]["question"] == card["question"]
     assert client.get(f"/api/topics/{topic}/documents").json()[0]["used_for_questions"] is True
-    translated = client.post(
+    response = client.post(
         "/api/generate", json={"topic_ids": [topic], "count": 1, "target_language": "ru"}
-    ).json()
-    run_job(app.state.db, app.state.ai, translated["id"])
-    translation = client.get(f"/api/cards?job_id={translated['id']}").json()[0]
-    assert translation["language"] == translation["target_language"] == "ru"
+    )
+    assert response.status_code == 422
     with app.state.db.session() as db:
         assert db.get(Card, card["id"]).language == "pl"
+        legacy = Card(
+            topic_id=topic,
+            question="Гражданин?",
+            answer="Гражданин",
+            mode="quiz",
+            options=["Гражданин", "Город"],
+            correct_index=0,
+            language="ru",
+            target_language="ru",
+            status="saved",
+        )
+        db.add(legacy)
+        db.flush()
+        legacy_id = legacy.id
+    old = next(c for c in client.get(f"/api/cards?topic_id={topic}").json() if c["id"] == legacy_id)
+    assert old["language"] == old["target_language"] == "ru"
 
 
 def test_extraction_schema_keeps_optional_language_for_legacy_results():

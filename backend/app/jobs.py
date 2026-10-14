@@ -1,5 +1,7 @@
+import hashlib
+import json
 import threading
-import unicodedata
+from collections import Counter
 
 import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,25 +11,84 @@ from sqlalchemy import select, text, update
 from .ai import AIError
 from .auth import require_user
 from .deletion import cleanup_deleted_files
+from .exercises import normalize_text
 from .library import get_or_404
 from .models import Card, CardSource, Document, Explanation, Job, SourcePage, Topic, now
-from .quiz import correct_indices, prepare_options, save_options, validate_preparation
-from .schemas import CardEdit, GenerateBody, GeneratedCard, SaveCards
+from .quiz import (
+    correct_indices,
+    preparation_job,
+    prepare_options,
+    quiz_ready,
+    save_options,
+    validate_preparation,
+)
+from .schemas import (
+    CardEdit,
+    GenerateBody,
+    GeneratedCard,
+    PrepareOptionsBody,
+    QuizOptions,
+    SaveCards,
+    SavePreparationBody,
+)
 from .sources import available_sources, source_data
 from .youtube import ingest_youtube
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
 
-def question_key(topic_id, question, answer, language):
+def question_key(topic_id, question, answer, language, question_type="choice", exercise=None):
     return (
         topic_id,
-        *(
-            " ".join(unicodedata.normalize("NFKC", value).casefold().split())
-            for value in (question, answer)
-        ),
+        normalize_text(question),
+        normalize_text(answer),
         language,
+        question_type,
+        json.dumps(exercise, sort_keys=True, ensure_ascii=False),
     )
+
+
+def generation_quotas(topic_ids, question_types, count):
+    pairs = [(topic, kind) for topic in topic_ids for kind in question_types]
+    if not pairs or count < len(pairs):
+        raise ValueError("Нужен хотя бы один вопрос для каждой темы и типа")
+    return {
+        topic: {
+            kind: count // len(pairs) + int(index < count % len(pairs))
+            for index, (t, kind) in enumerate(pairs)
+            if t == topic
+        }
+        for topic in topic_ids
+    }
+
+
+def fingerprint(value):
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def request_replay(db, user_id, kind, key, body_fingerprint):
+    if key is None:
+        return None
+    for row in db.scalars(select(Job).where(Job.user_id == user_id).order_by(Job.id.desc())):
+        for entry in row.payload.get("request_keys", []):
+            if entry["key"] == key:
+                if row.kind != kind or entry["fingerprint"] != body_fingerprint:
+                    raise HTTPException(409, "Идентификатор уже использован для другого запроса")
+                return row
+    return None
+
+
+def bind_request(job, key, body_fingerprint):
+    if key is not None:
+        entries = job.payload.get("request_keys", [])
+        if len(entries) >= 100:
+            raise HTTPException(409, "Слишком много повторов. Дождитесь текущей задачи")
+        job.payload = {
+            **job.payload,
+            "request_keys": [*entries, {"key": key, "fingerprint": body_fingerprint}],
+        }
 
 
 def job_data(job, db=None):
@@ -110,53 +171,65 @@ def ingest(database, ai, payload):
 
 
 def generate(database, ai, payload, job_id=None):
-    results, reasons = [], []
+    if payload.get("target_language"):
+        raise ValueError("Перевод отключён. Создайте новую задачу на исходном языке")
+    results, reasons, unsupported = [], [], []
     topics = payload["topics"]
-    for index, topic in enumerate(topics):
+    kinds = payload.get("question_types", ["choice"])
+    quotas = generation_quotas([t["id"] for t in topics], kinds, payload["count"])
+    for topic in topics:
         with database.session() as db:
             if job_id is not None and db.get(Job, job_id).status != "running":
                 raise ValueError("Задача отменена")
             get_or_404(db, Topic, topic["id"])
             for source in topic["sources"]:
                 get_or_404(db, Document, source["document_id"])
-        count = payload["count"] // len(topics) + int(index < payload["count"] % len(topics))
-        generated = ai.generate(
-            topic["id"],
-            topic["sources"],
-            payload["mode"],
-            count,
-            target_language=payload.get("target_language"),
-            existing=topic.get("existing", []),
-        )
-        if len(generated.cards) > count:
-            raise ValueError("Модель превысила запрошенное число карточек")
+        count = sum(quotas[topic["id"]].values())
+        arguments = dict(target_language=None, existing=topic.get("existing", []))
+        if kinds != ["choice"] or payload.get("practice_goal", "content") != "content":
+            arguments.update(
+                question_types=kinds,
+                type_counts=quotas[topic["id"]],
+                practice_goal=payload.get("practice_goal", "content"),
+            )
+        generated = ai.generate(topic["id"], topic["sources"], payload["mode"], count, **arguments)
+        counts = Counter(card.question_type for card in generated.cards)
+        if any(
+            kind not in kinds or amount > quotas[topic["id"]].get(kind, 0)
+            for kind, amount in counts.items()
+        ):
+            raise ValueError("Модель нарушила типы или квоты вопросов")
+        rejected = set()
+        for item in getattr(generated, "unsupported_types", []):
+            if (
+                item.question_type not in kinds
+                or item.question_type in rejected
+                or counts[item.question_type]
+                or not item.reason.strip()
+            ):
+                raise ValueError("Модель вернула противоречивый неподходящий тип")
+            rejected.add(item.question_type)
+            unsupported.append({"question_type": item.question_type, "reason": item.reason.strip()})
+            reasons.append(item.reason.strip())
         if generated.insufficient_reason:
             reasons.append(generated.insufficient_reason)
         for card in generated.cards:
             if card.topic_id != topic["id"] or card.mode != payload["mode"]:
                 raise ValueError("Модель смешала темы или форматы карточек")
             check_refs(card.sources, topic["sources"])
+            refs = {(r.document_id, r.page) for r in card.sources}
             languages = {
                 s.get("language")
                 for s in topic["sources"]
-                if (s["document_id"], s["page"]) in {(r.document_id, r.page) for r in card.sources}
-                and s.get("language")
+                if (s["document_id"], s["page"]) in refs and s.get("language")
             }
-            target = payload.get("target_language")
-            if target and card.language and card.language != target:
-                raise ValueError("Модель вернула неверный язык перевода")
-            if (
-                not target
-                and len(languages) == 1
-                and card.language
-                and card.language not in languages
-            ):
+            if len(languages) > 1:
+                raise ValueError("Один вопрос должен использовать источники одного языка")
+            if len(languages) == 1 and card.language and card.language not in languages:
                 raise ValueError("Модель изменила язык исходного материала")
-            card.language = (
-                target or card.language or (next(iter(languages)) if len(languages) == 1 else None)
-            )
+            card.language = card.language or (next(iter(languages)) if languages else None)
             results.append((card, topic["sources"]))
-    return results, reasons
+    return results, reasons, unsupported
 
 
 def run_job(database, ai, identifier):
@@ -176,8 +249,8 @@ def run_job(database, ai, identifier):
         elif kind == "youtube":
             result = ingest_youtube(database, payload)
         elif kind == "generate":
-            cards, reasons = generate(database, ai, payload, identifier)
-            result = {"card_ids": [], "warnings": reasons}
+            cards, reasons, unsupported = generate(database, ai, payload, identifier)
+            result = {"card_ids": [], "warnings": reasons, "unsupported_types": unsupported}
         elif kind == "prepare_quiz":
             with database.session() as db:
                 validate_preparation(db, payload)
@@ -189,7 +262,14 @@ def run_job(database, ai, identifier):
                     validate_preparation(db, payload)
 
             options = prepare_options(ai, payload, before_each=check_preparation)
-            result = {"card_ids": [item.card_id for item in options]}
+            versions = {c["id"]: c["version"] for c in payload["cards"]}
+            result = {
+                "card_ids": [item.card_id for item in options],
+                "candidates": [
+                    {**item.model_dump(), "version": versions[item.card_id]} for item in options
+                ],
+                "applied_card_ids": [],
+            }
         elif kind == "explain":
             explanation = ai.explain(payload["snapshot"], payload["question"], payload["history"])
             check_refs(explanation.sources, payload["snapshot"]["sources"])
@@ -214,13 +294,20 @@ def run_job(database, ai, identifier):
                 return
             if kind == "generate":
                 existing = {
-                    question_key(c.topic_id, c.question, c.answer, c.language)
+                    question_key(
+                        c.topic_id, c.question, c.answer, c.language, c.question_type, c.exercise
+                    )
                     for c in db.scalars(select(Card).where(Card.status != "deleted"))
                 }
                 skipped = 0
                 for generated, sources in cards:
                     key = question_key(
-                        generated.topic_id, generated.question, generated.answer, generated.language
+                        generated.topic_id,
+                        generated.question,
+                        generated.answer,
+                        generated.language,
+                        generated.question_type,
+                        generated.exercise.model_dump() if generated.exercise else None,
                     )
                     if key in existing:
                         skipped += 1
@@ -228,6 +315,8 @@ def run_job(database, ai, identifier):
                     existing.add(key)
                     card = Card(
                         topic_id=generated.topic_id,
+                        question_type=generated.question_type,
+                        exercise=generated.exercise.model_dump() if generated.exercise else None,
                         job_id=identifier,
                         question=generated.question,
                         answer=generated.answer,
@@ -247,7 +336,7 @@ def run_job(database, ai, identifier):
                 if skipped:
                     result["warnings"].append(f"Пропущено повторных вопросов: {skipped}")
             elif kind == "prepare_quiz":
-                save_options(db, payload, options)
+                validate_preparation(db, payload)
             elif kind == "explain":
                 value = Explanation(
                     user_id=user_id,
@@ -348,6 +437,10 @@ def start_generation(body: GenerateBody, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
+        body_signature = fingerprint(body.model_dump(exclude={"idempotency_key"}))
+        replay = request_replay(db, user.id, "generate", body.idempotency_key, body_signature)
+        if replay is not None:
+            return job_data(replay, db)
         if body.document_ids is not None:
             chosen = list(
                 db.scalars(
@@ -391,7 +484,13 @@ def start_generation(body: GenerateBody, request: Request):
             if not sources:
                 raise HTTPException(422, "В каждой выбранной теме нужны готовые материалы")
             existing = [
-                {"question": c.question, "answer": c.answer, "language": c.language}
+                {
+                    "question": c.question,
+                    "answer": c.answer,
+                    "language": c.language,
+                    "question_type": c.question_type,
+                    "exercise": c.exercise,
+                }
                 for c in db.scalars(
                     select(Card).where(Card.topic_id == identifier, Card.status != "deleted")
                 )
@@ -402,6 +501,23 @@ def start_generation(body: GenerateBody, request: Request):
             raise HTTPException(
                 422, "Материалы превышают 100 000 символов. Выберите меньше документов"
             )
+        scope = fingerprint(
+            {
+                "body": body.model_dump(exclude={"idempotency_key"}),
+                "sources": [{"id": t["id"], "sources": t["sources"]} for t in topics],
+            }
+        )
+        active = db.scalar(
+            select(Job).where(
+                Job.user_id == user.id,
+                Job.kind == "generate",
+                Job.status.in_(["queued", "running"]),
+                Job.payload["scope"].as_string() == scope,
+            )
+        )
+        if active is not None:
+            bind_request(active, body.idempotency_key, body_signature)
+            return job_data(active, db)
         value = Job(
             user_id=user.id,
             kind="generate",
@@ -409,9 +525,13 @@ def start_generation(body: GenerateBody, request: Request):
                 "topics": topics,
                 "mode": body.mode,
                 "count": body.count,
-                "target_language": body.target_language,
+                "target_language": None,
+                "question_types": body.question_types,
+                "practice_goal": body.practice_goal,
+                "scope": scope,
             },
         )
+        bind_request(value, body.idempotency_key, body_signature)
         db.add(value)
         db.flush()
         return job_data(value, db)
@@ -428,6 +548,8 @@ def card_data(db, card, include_text=False):
         "id": card.id,
         "job_id": card.job_id,
         "topic_id": card.topic_id,
+        "question_type": card.question_type,
+        "exercise": card.exercise,
         "question": card.question,
         "answer": card.answer,
         "language": card.language,
@@ -469,22 +591,45 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
         if card.version != body.version:
             raise HTTPException(409, "Карточка изменена в другой вкладке. Обновите список")
         original = card_data(db, card)
+        supplied = body.model_dump(exclude={"version"}, exclude_unset=True)
+        exercise = supplied.get("exercise", original["exercise"])
         try:
             validated = GeneratedCard.model_validate(
                 {
-                    **{k: original[k] for k in ["topic_id", "mode"]},
-                    **body.model_dump(exclude={"version"}, exclude_none=True),
+                    **{
+                        k: original[k]
+                        for k in (
+                            "topic_id",
+                            "mode",
+                            "question_type",
+                            "language",
+                            "question",
+                            "answer",
+                            "options",
+                            "correct_index",
+                            "correct_indices",
+                        )
+                    },
+                    **supplied,
+                    "exercise": exercise,
                     "sources": [
                         {"document_id": s["document_id"], "page": s["page"]}
                         for s in original["sources"]
                     ],
                 }
             )
-        except ValidationError:
-            raise HTTPException(422, "Проверьте вопрос, ответ и правильные варианты") from None
+            if (
+                card.question_type != "choice"
+                and body.answer is not None
+                and body.answer != validated.answer
+            ):
+                raise ValueError("Решение должно соответствовать упражнению")
+        except (ValidationError, ValueError):
+            raise HTTPException(422, "Проверьте вопрос, ответ и параметры задания") from None
         card.question, card.answer = validated.question, validated.answer
         card.options, card.correct_index = validated.options, validated.correct_index
         card.correct_indices = validated.correct_indices
+        card.exercise = validated.exercise.model_dump() if validated.exercise else None
         card.version += 1
         return card_data(db, card)
 
@@ -501,3 +646,85 @@ def save_cards(body: SaveCards, request: Request):
         for card in cards:
             card.status = "saved"
         return {"saved": len(cards)}
+
+
+@router.post("/study/prepare-options")
+def prepare_quiz_options(body: PrepareOptionsBody, request: Request):
+    user = require_user(request)
+    with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
+        signature = fingerprint(body.model_dump(exclude={"idempotency_key"}))
+        previous = request_replay(db, user.id, "prepare_quiz", body.idempotency_key, signature)
+        if previous is not None:
+            return job_data(previous, db)
+        for topic_id in body.topic_ids:
+            get_or_404(db, Topic, topic_id)
+        cards = list(
+            db.scalars(
+                select(Card)
+                .where(
+                    Card.topic_id.in_(body.topic_ids),
+                    Card.status == "saved",
+                    Card.question_type == "choice",
+                )
+                .order_by(Card.id)
+            )
+        )
+        missing = [card_data(db, card, include_text=True) for card in cards if not quiz_ready(card)]
+        if not missing:
+            raise HTTPException(422, "Нет сохранённых вопросов, которым нужны варианты")
+        value = preparation_job(db, user.id, sorted(body.topic_ids), missing)
+        bind_request(value, body.idempotency_key, signature)
+        return job_data(value, db)
+
+
+@router.post("/jobs/{identifier}/save-preparation")
+def accept_preparation(identifier: int, body: SavePreparationBody, request: Request):
+    user = require_user(request)
+    with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
+        job = get_or_404(db, Job, identifier)
+        if job.user_id != user.id or job.kind != "prepare_quiz":
+            raise HTTPException(404, "Не найдено")
+        if job.status != "succeeded" or not job.result or job.result.get("discarded"):
+            raise HTTPException(409, "Сначала дождитесь подготовки")
+        candidates = {c["card_id"]: c for c in job.result.get("candidates", [])}
+        if not set(body.card_ids) <= set(candidates):
+            raise HTTPException(422, "Вопросы не принадлежат этому предпросмотру")
+        applied = set(job.result.get("applied_card_ids", []))
+        selected = set(body.card_ids) - applied
+        snapshots = [c for c in job.payload["cards"] if c["id"] in selected]
+        options = [
+            QuizOptions.model_validate(
+                {k: v for k, v in candidates[c["id"]].items() if k != "version"}
+            )
+            for c in snapshots
+        ]
+        if selected:
+            try:
+                save_options(db, {"cards": snapshots}, options)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
+        job.result = {**job.result, "applied_card_ids": sorted(applied | selected)}
+        return {"saved": len(body.card_ids), "card_ids": sorted(body.card_ids)}
+
+
+@router.post("/jobs/{identifier}/discard-preparation")
+def discard_preparation(identifier: int, request: Request):
+    user = require_user(request)
+    with request.app.state.db.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
+        job = get_or_404(db, Job, identifier)
+        if job.user_id != user.id or job.kind != "prepare_quiz":
+            raise HTTPException(404, "Не найдено")
+        if job.status in {"queued", "running"}:
+            job.status = "cancelled"
+        job.payload = {k: v for k, v in job.payload.items() if k in {"request_keys", "topic_ids"}}
+        applied = (job.result or {}).get("applied_card_ids", [])
+        job.result = {
+            "discarded": True,
+            "applied_card_ids": applied,
+            "candidates": [],
+            "card_ids": [],
+        }
+        return {"discarded": True}

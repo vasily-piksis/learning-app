@@ -2,6 +2,19 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
+from .exercises import (
+    EndingExercise,
+    GapExercise,
+    MatchingExercise,
+    OrderingExercise,
+    QuestionType,
+    WrittenExercise,
+    solution_text,
+    validate_exercise,
+)
+
+Exercise = WrittenExercise | GapExercise | EndingExercise | MatchingExercise | OrderingExercise
+
 
 class NameBody(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -61,9 +74,27 @@ class GeneratedCard(Strict):
     correct_indices: list[StrictInt] = Field(default_factory=list)
     sources: list[SourceRef]
     language: str | None = None
+    question_type: QuestionType = "choice"
+    exercise: Exercise | None = None
 
     @model_validator(mode="after")
     def semantic_fields(self):
+        if self.question_type != "choice":
+            value = self.exercise.model_dump() if self.exercise is not None else None
+            normalized = validate_exercise(self.question_type, value)
+            self.exercise = type(self.exercise).model_validate(normalized)
+            self.answer = solution_text(self.question_type, normalized)
+            if (
+                self.mode != "quiz"
+                or self.options
+                or self.correct_indices
+                or self.correct_index is not None
+            ):
+                raise ValueError("Для этого задания нужен quiz без вариантов ответа")
+            if not self.question.strip() or not self.sources:
+                raise ValueError("Карточке нужны вопрос и источники")
+            return self
+        validate_exercise("choice", self.exercise)
         if not self.question.strip() or not self.answer.strip() or not self.sources:
             raise ValueError("Карточке нужны вопрос, ответ и источники")
         if self.mode == "quiz":
@@ -75,9 +106,15 @@ class GeneratedCard(Strict):
         return self
 
 
+class UnsupportedType(Strict):
+    question_type: QuestionType
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class Generated(Strict):
     cards: list[GeneratedCard]
     insufficient_reason: str | None
+    unsupported_types: list[UnsupportedType] = Field(default_factory=list)
 
 
 class QuizOptions(Strict):
@@ -102,7 +139,7 @@ class ExplanationResult(Strict):
     sources: list[SourceRef]
 
 
-class GenerateBody(BaseModel):
+class GenerateBody(Strict):
     topic_ids: list[int] = Field(min_length=1, max_length=30)
     document_ids: list[int] | None = None
     mode: Literal["flashcard", "quiz"] = "quiz"
@@ -111,9 +148,28 @@ class GenerateBody(BaseModel):
     )
     count: int = Field(ge=1, le=30)
     allow_partial: bool = False
+    question_types: list[QuestionType] = Field(
+        default_factory=lambda: ["choice"], min_length=1, max_length=6
+    )
+    practice_goal: Literal["content", "language"] = "content"
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=80)
 
     @model_validator(mode="after")
     def distinct_topics(self):
+        if self.target_language is not None:
+            raise ValueError(
+                "Учебное содержимое сохраняет исходный язык; перевод не поддерживается"
+            )
+        if len(set(self.question_types)) != len(self.question_types) or self.count < len(
+            self.topic_ids
+        ) * len(self.question_types):
+            raise ValueError("Выберите разные типы и хотя бы один вопрос на тему и тип")
+        if self.practice_goal == "content" and any(
+            t in {"ending", "ordering"} for t in self.question_types
+        ):
+            raise ValueError("Для окончаний и сборки предложения выберите языковую практику")
+        if self.mode == "flashcard" and self.question_types != ["choice"]:
+            raise ValueError("Специализированные задания создаются в режиме quiz")
         if len(set(self.topic_ids)) != len(self.topic_ids) or self.count < len(self.topic_ids):
             raise ValueError("Выберите разные темы и хотя бы одну карточку на тему")
         if self.document_ids is not None and (
@@ -123,10 +179,11 @@ class GenerateBody(BaseModel):
         return self
 
 
-class CardEdit(BaseModel):
+class CardEdit(Strict):
     question: str = Field(min_length=1, max_length=10000)
-    answer: str = Field(min_length=1, max_length=10000)
-    options: list[str]
+    answer: str | None = Field(default=None, min_length=1, max_length=10000)
+    options: list[str] = Field(default_factory=list)
+    exercise: Exercise | None = None
     correct_index: StrictInt | None = None
     correct_indices: list[StrictInt] | None = None
     version: int
@@ -134,3 +191,24 @@ class CardEdit(BaseModel):
 
 class SaveCards(BaseModel):
     card_ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class PrepareOptionsBody(Strict):
+    topic_ids: list[StrictInt] = Field(min_length=1, max_length=30)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def unique_topics(self):
+        if len(set(self.topic_ids)) != len(self.topic_ids) or any(i < 1 for i in self.topic_ids):
+            raise ValueError("Выберите разные темы")
+        return self
+
+
+class SavePreparationBody(Strict):
+    card_ids: list[StrictInt] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_cards(self):
+        if len(set(self.card_ids)) != len(self.card_ids):
+            raise ValueError("Выберите разные вопросы")
+        return self

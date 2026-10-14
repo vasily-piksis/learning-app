@@ -4,16 +4,30 @@ from sqlalchemy import func, select
 from test_study import saved_cards
 
 
-def test_legacy_flashcards_prepare_once_then_both_modes_keep_history(client, app):
+def prepare(client, topic):
+    response = client.post("/api/study/prepare-options", json={"topic_ids": [topic]})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def accept(client, job):
+    result = client.get(f"/api/jobs/{job['id']}").json()["result"]
+    response = client.post(
+        f"/api/jobs/{job['id']}/save-preparation", json={"card_ids": result["card_ids"]}
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_legacy_flashcards_prepare_once_then_review_without_changing_history(client, app):
     topic, cards = saved_cards(client, app, "flashcard", 2)
     flash = client.post("/api/study", json={"topic_ids": [topic], "mode": "flashcard"}).json()
-    response = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"})
-    assert response.status_code == 202, response.text
-    job = response.json()["preparation_job"]
-    repeated = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
-    assert repeated["preparation_job"]["id"] == job["id"]
+    assert client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).status_code == 422
+    job = prepare(client, topic)
+    assert prepare(client, topic)["id"] == job["id"]
     run_job(app.state.db, app.state.ai, job["id"])
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "succeeded"
+    assert client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).status_code == 422
+    accept(client, job)
     quiz = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
     assert quiz["count"] == 2 and quiz["card"]["options"]
     assert "correct_index" not in quiz["card"]
@@ -30,9 +44,7 @@ def test_preparation_version_conflict_is_atomic_and_drafts_excluded(client, app)
     topic, cards = saved_cards(client, app, "flashcard", 3)
     with app.state.db.session() as db:
         db.get(Card, cards[2]["id"]).status = "draft"
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = prepare(client, topic)
     with app.state.db.session() as db:
         db.get(Card, cards[0]["id"]).version += 1
     run_job(app.state.db, app.state.ai, job["id"])
@@ -40,26 +52,23 @@ def test_preparation_version_conflict_is_atomic_and_drafts_excluded(client, app)
     assert failed["status"] == "failed" and "измен" in failed["error"]
     with app.state.db.session() as db:
         assert all(c.options == [] for c in db.scalars(select(Card)))
-    new = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
-    assert new["id"] != job["id"]
-    run_job(app.state.db, app.state.ai, new["id"])
-    quiz = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
-    assert quiz["count"] == 2
+    fresh = prepare(client, topic)
+    assert fresh["id"] != job["id"]
+    run_job(app.state.db, app.state.ai, fresh["id"])
+    accept(client, fresh)
+    assert (
+        client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()["count"] == 2
+    )
 
 
 def test_failed_preparation_recovery_retry_and_private_access(client, app):
     topic, _ = saved_cards(client, app, "flashcard", 1)
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = prepare(client, topic)
     with app.state.db.session() as db:
         db.get(Job, job["id"]).status = "running"
     recover_jobs(app.state.db)
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
-    response = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"})
-    assert response.json()["preparation_job"]["id"] == job["id"]
+    assert prepare(client, topic)["id"] == job["id"]
     assert client.post(f"/api/jobs/{job['id']}/retry").status_code == 200
     run_job(app.state.db, app.state.ai, job["id"])
     login = client.post(
@@ -68,6 +77,10 @@ def test_failed_preparation_recovery_retry_and_private_access(client, app):
     client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
     assert client.get(f"/api/jobs/{job['id']}").status_code == 404
     assert client.post(f"/api/jobs/{job['id']}/retry").status_code == 404
+    assert (
+        client.post(f"/api/jobs/{job['id']}/save-preparation", json={"card_ids": [1]}).status_code
+        == 404
+    )
 
 
 def test_mixed_bank_prepares_only_missing_options_and_rejects_changed_answer(client, app):
@@ -77,9 +90,7 @@ def test_mixed_bank_prepares_only_missing_options_and_rejects_changed_answer(cli
     with app.state.db.session() as db:
         ready = db.get(Card, cards[0]["id"])
         ready.mode, ready.options, ready.correct_index = "quiz", [ready.answer, "Дон"], 0
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = prepare(client, topic)
     with app.state.db.session() as db:
         assert [c["id"] for c in db.get(Job, job["id"]).payload["cards"]] == [cards[1]["id"]]
     app.state.ai.prepare_quiz = lambda snapshot: QuizOptions(
@@ -95,9 +106,9 @@ def test_many_legacy_questions_share_one_source_without_exceeding_limit(client, 
     topic, _ = saved_cards(client, app, "flashcard", 21)
     with app.state.db.session() as db:
         db.scalar(select(SourcePage)).text = "x" * 5600
-    response = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"})
-    assert response.status_code == 202, response.text
-    run_job(app.state.db, app.state.ai, response.json()["preparation_job"]["id"])
+    job = prepare(client, topic)
+    run_job(app.state.db, app.state.ai, job["id"])
+    accept(client, job)
     assert (
         client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()["count"] == 21
     )
@@ -105,9 +116,7 @@ def test_many_legacy_questions_share_one_source_without_exceeding_limit(client, 
 
 def test_preparation_stale_before_run_and_retry_make_no_paid_calls(client, app):
     topic, cards = saved_cards(client, app, "flashcard", 2)
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = prepare(client, topic)
     calls = []
     original = app.state.ai.prepare_quiz
 
@@ -119,27 +128,19 @@ def test_preparation_stale_before_run_and_retry_make_no_paid_calls(client, app):
     with app.state.db.session() as db:
         db.get(Card, cards[0]["id"]).version += 1
     run_job(app.state.db, app.state.ai, job["id"])
-    assert calls == []
-    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
-    response = client.post(f"/api/jobs/{job['id']}/retry")
-    assert response.status_code == 409
-    assert "Запустите тест заново" in response.json()["detail"]
-    run_job(app.state.db, app.state.ai, job["id"])
-    assert calls == []
-    fresh = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    assert calls == [] and client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
+    assert client.post(f"/api/jobs/{job['id']}/retry").status_code == 409
+    fresh = prepare(client, topic)
     assert fresh["id"] != job["id"]
     run_job(app.state.db, app.state.ai, fresh["id"])
-    assert len(calls) == 2
-    assert client.get(f"/api/jobs/{fresh['id']}").json()["status"] == "succeeded"
+    assert (
+        len(calls) == 2 and client.get(f"/api/jobs/{fresh['id']}").json()["status"] == "succeeded"
+    )
 
 
-def test_edit_during_model_call_still_rejects_all_option_writes(client, app):
+def test_edit_during_model_call_rejects_option_candidate_atomically(client, app):
     topic, cards = saved_cards(client, app, "flashcard", 2)
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = prepare(client, topic)
     original = app.state.ai.prepare_quiz
 
     def concurrent_edit(snapshot):
@@ -156,12 +157,9 @@ def test_edit_during_model_call_still_rejects_all_option_writes(client, app):
 
 def test_failed_preparation_retry_rejects_obsolete_snapshot(client, app):
     topic, cards = saved_cards(client, app, "flashcard", 1)
-    job = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()[
-        "preparation_job"
-    ]
+    job = prepare(client, topic)
     with app.state.db.session() as db:
         db.get(Job, job["id"]).status = "failed"
         db.get(Card, cards[0]["id"]).version += 1
-    response = client.post(f"/api/jobs/{job['id']}/retry")
-    assert response.status_code == 409, response.text
+    assert client.post(f"/api/jobs/{job['id']}/retry").status_code == 409
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"

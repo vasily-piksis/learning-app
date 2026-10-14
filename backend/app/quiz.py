@@ -1,3 +1,5 @@
+import json
+
 from fastapi import HTTPException
 from sqlalchemy import select
 
@@ -14,6 +16,8 @@ def correct_indices(card):
 
 
 def quiz_ready(card):
+    if getattr(card, "question_type", "choice") != "choice":
+        return False
     return (
         2 <= len(card.options) <= 6
         and len(set(card.options)) == len(card.options)
@@ -24,7 +28,10 @@ def quiz_ready(card):
 
 
 def preparation_job(db, user_id, topic_ids, snapshots):
-    signature = [(card["id"], card["version"]) for card in snapshots]
+    signature = [
+        (card["id"], card["version"], json.dumps(card.get("sources", []), sort_keys=True))
+        for card in snapshots
+    ]
     for job in db.scalars(
         select(Job)
         .where(
@@ -36,7 +43,11 @@ def preparation_job(db, user_id, topic_ids, snapshots):
     ):
         if (
             job.payload["topic_ids"] == topic_ids
-            and [(card["id"], card["version"]) for card in job.payload["cards"]] == signature
+            and [
+                (card["id"], card["version"], json.dumps(card.get("sources", []), sort_keys=True))
+                for card in job.payload.get("cards", [])
+            ]
+            == signature
         ):
             return job
     sources = {
@@ -72,7 +83,10 @@ def prepare_options(ai, payload, before_each=None):
 def validate_preparation(db, payload):
     cards = [db.get(Card, snapshot["id"]) for snapshot in payload["cards"]]
     if any(
-        card is None or card.version != snapshot["version"] or card.status != "saved"
+        card is None
+        or card.version != snapshot["version"]
+        or card.status != "saved"
+        or card.question_type != "choice"
         for card, snapshot in zip(cards, payload["cards"], strict=True)
     ):
         raise ValueError("Вопрос изменён во время подготовки теста. Запустите тест заново")
