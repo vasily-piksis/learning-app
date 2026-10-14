@@ -1,4 +1,81 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Убрать текст {n}": { pl: "Usuń tekst {n}", en: "Remove text {n}" },
+  "Убрать пропуск {n}": { pl: "Usuń lukę {n}", en: "Remove gap {n}" },
+  "Выбор ответа": { pl: "Wybór odpowiedzi", en: "Multiple choice" },
+  "Письменный ответ": {
+    pl: "Krótka odpowiedź pisemna",
+    en: "Short written answer",
+  },
+  Пропуски: { pl: "Uzupełnianie luk", en: "Fill in the gaps" },
+  Окончания: { pl: "Końcówki", en: "Word endings" },
+  Пары: { pl: "Dopasowywanie par", en: "Matching pairs" },
+  "Сборка предложения": { pl: "Układanie zdania", en: "Sentence ordering" },
+  "Содержание темы": { pl: "Treść tematu", en: "Topic content" },
+  "Язык и грамматику": { pl: "Język i gramatyka", en: "Language and grammar" },
+  "Что тренируем?": { pl: "Co ćwiczymy?", en: "What are we practising?" },
+  "Типы вопросов": { pl: "Rodzaje pytań", en: "Question types" },
+  "Окончания и сборка предложения доступны для языковой практики.": {
+    pl: "Końcówki i układanie zdań są dostępne w ćwiczeniach językowych.",
+    en: "Endings and sentence ordering are available for language practice.",
+  },
+  "Количество общее для выбранных типов; неподходящие задания не будут созданы.":
+    {
+      pl: "Łączna liczba dla wybranych rodzajów; nieodpowiednie zadania nie zostaną utworzone.",
+      en: "The count is shared across selected types; unsuitable tasks will not be created.",
+    },
+  "От 1 до 30. Общее количество для всех выбранных типов.": {
+    pl: "Od 1 do 30. Łączna liczba dla wszystkich wybranych rodzajów.",
+    en: "From 1 to 30, shared across all selected types.",
+  },
+  "Допустимые ответы": { pl: "Akceptowane odpowiedzi", en: "Accepted answers" },
+  "Один допустимый ответ на строку. Язык задания сохраняется.": {
+    pl: "Jedna akceptowana odpowiedź w każdym wierszu. Język zadania pozostaje bez zmian.",
+    en: "One accepted answer per line. The task language is preserved.",
+  },
+  "Учитывать регистр": {
+    pl: "Rozróżniaj wielkość liter",
+    en: "Case sensitive",
+  },
+  "Полное решение": { pl: "Pełne rozwiązanie", en: "Complete solution" },
+  "Текст с пропусками": { pl: "Tekst z lukami", en: "Text with gaps" },
+  "Текст {n}": { pl: "Tekst {n}", en: "Text {n}" },
+  "Пропуск {n}": { pl: "Luka {n}", en: "Gap {n}" },
+  "Здесь нужно окончание": {
+    pl: "Tutaj wpisz końcówkę",
+    en: "An ending belongs here",
+  },
+  "Добавить текст": { pl: "Dodaj tekst", en: "Add text" },
+  "Добавить пропуск": { pl: "Dodaj lukę", en: "Add gap" },
+  "Допустимые сочетания": {
+    pl: "Akceptowane kombinacje",
+    en: "Accepted combinations",
+  },
+  "Каждая строка — полностью правильное сочетание. Ответы разных строк не смешиваются.":
+    {
+      pl: "Każdy wiersz to pełna poprawna kombinacja. Nie łącz odpowiedzi z różnych wierszy.",
+      en: "Each row is a complete correct combination. Answers from different rows cannot be mixed.",
+    },
+  "Сочетание {n}, пропуск {gap}": {
+    pl: "Kombinacja {n}, luka {gap}",
+    en: "Combination {n}, gap {gap}",
+  },
+  "Убрать сочетание": { pl: "Usuń kombinację", en: "Remove combination" },
+  "Добавить сочетание": { pl: "Dodaj kombinację", en: "Add combination" },
+  "Слева {n}": { pl: "Lewa strona {n}", en: "Left {n}" },
+  "Справа {n}": { pl: "Prawa strona {n}", en: "Right {n}" },
+  "Убрать пару": { pl: "Usuń parę", en: "Remove pair" },
+  "Добавить пару": { pl: "Dodaj parę", en: "Add pair" },
+  "Слова предложения": { pl: "Słowa zdania", en: "Sentence words" },
+  "Каждое слово на отдельной строке; повторяющиеся слова допустимы.": {
+    pl: "Każde słowo w osobnym wierszu; powtórzenia są dozwolone.",
+    en: "One word per line; repeated words are allowed.",
+  },
+  "Допустимый порядок {n}": {
+    pl: "Akceptowana kolejność {n}",
+    en: "Accepted order {n}",
+  },
+  "Добавить порядок": { pl: "Dodaj kolejność", en: "Add order" },
+  "Убрать порядок": { pl: "Usuń kolejność", en: "Remove order" },
   Профиль: { pl: "Profil", en: "Profile" },
   "Смена пароля для аккаунта «{name}».": {
     pl: "Zmiana hasła do konta „{name}”.",

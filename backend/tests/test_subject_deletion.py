@@ -29,7 +29,11 @@ def test_subject_removes_all_descendants_files_and_preserves_other_subject_and_h
     session = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
     client.post(
         f"/api/study/{session['id']}/answer",
-        json={"position": 0, "choice": 1, "idempotency_key": "subject-history"},
+        json={
+            "position": 0,
+            "choice": session["card"]["options"].index("Дон"),
+            "idempotency_key": "subject-history",
+        },
     )
     with app.state.db.session() as db:
         documents = list(db.scalars(select(Document).where(Document.topic_id.in_([topic, second]))))

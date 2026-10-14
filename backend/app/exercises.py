@@ -187,7 +187,18 @@ def build_snapshot(card: dict) -> dict:
     kind = snapshot.get("question_type", "choice")
     value = validate_exercise(kind, original_exercise(snapshot))
     snapshot.update(question_type=kind, snapshot_version=2, exercise=value)
-    if kind == "matching":
+    if kind == "choice" and snapshot.get("mode") == "quiz":
+        from .quiz import correct_indices
+
+        indices = list(range(len(snapshot.get("options", []))))
+        random.SystemRandom().shuffle(indices)
+        correct = set(correct_indices(snapshot))
+        snapshot["options"] = [snapshot["options"][i] for i in indices]
+        snapshot["correct_indices"] = [i for i, old in enumerate(indices) if old in correct]
+        snapshot["correct_index"] = (
+            snapshot["correct_indices"][0] if len(snapshot["correct_indices"]) == 1 else None
+        )
+    elif kind == "matching":
         left, right, solution = [], [], []
         for pair in value["pairs"]:
             l_id, r_id = secrets.token_hex(12), secrets.token_hex(12)

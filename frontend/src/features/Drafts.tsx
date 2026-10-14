@@ -1,4 +1,6 @@
 import { correctIndices } from "@/lib/answers"
+import { questionLabel } from "@/lib/exercises"
+import ExerciseSolution from "./exercises/ExerciseSolution"
 import { t, systemMessage } from "@/i18n"
 import { useState } from "react"
 import { Check } from "lucide-react"
@@ -74,11 +76,16 @@ export default function Drafts({ job }: { job: Job }) {
                 ) : (
                   <Badge variant="secondary">{t("Сохранена")}</Badge>
                 )}
-                <CardTitle>{card.question}</CardTitle>
+                <div className="flex flex-col gap-2">
+                  <CardTitle>{card.question}</CardTitle>
+                  <Badge variant="outline">
+                    {questionLabel(card.question_type)}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <p className="whitespace-pre-wrap">{card.answer}</p>
+              <ExerciseSolution card={card} />
               {card.mode === "quiz" && (
                 <ol className="flex flex-col gap-2">
                   {card.options.map((v, i) => (

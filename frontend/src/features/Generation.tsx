@@ -1,13 +1,17 @@
 import { t } from "@/i18n"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { questionTypes, questionLabel } from "@/lib/exercises"
 import {
   Field,
   FieldGroup,
   FieldLabel,
   FieldDescription,
+  FieldSet,
+  FieldLegend,
 } from "@/components/ui/field"
 import {
   Card,
@@ -25,13 +29,15 @@ import {
   PageHeading,
 } from "@/components/shared"
 import { api, useQuery, errorText, navigate } from "@/api"
-import type { Topic, Document, Job } from "@/types"
+import type { Topic, Document, Job, QuestionType } from "@/types"
 import Drafts from "./Drafts"
 
 export default function Generation({
   initialTopics,
+  initialMethod,
 }: {
   initialTopics: number[]
+  initialMethod?: string
 }) {
   const topics = useQuery<Topic[]>("/topics")
   const id = initialTopics.length === 1 ? initialTopics[0] : null
@@ -41,10 +47,23 @@ export default function Generation({
   )
   const [selected, setSelected] = useState<number[] | null>(null),
     [count, setCount] = useState(10),
-    [translate, setTranslate] = useState(false),
-    [language, setLanguage] = useState("ru"),
+    [practiceGoal, setPracticeGoal] = useState<"content" | "language">(
+      initialMethod === "ending" || initialMethod === "ordering"
+        ? "language"
+        : "content"
+    ),
+    [selectedTypes, setSelectedTypes] = useState<QuestionType[]>([
+      questionTypes.find((type) => type === initialMethod) || "choice",
+    ]),
+    [goalNotice, setGoalNotice] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null)
+  const requestKey = useRef<{ signature: string; key: string } | null>(null)
+  const mode = initialMethod === "flashcard" ? "flashcard" : "quiz"
+  const allowedTypes =
+    practiceGoal === "language"
+      ? questionTypes
+      : questionTypes.filter((type) => type !== "ending" && type !== "ordering")
   const available =
     documents.data?.filter((document) => document.status === "ready") || []
   const newIds = available
@@ -57,13 +76,21 @@ export default function Generation({
     setBusy(true)
     setError(null)
     try {
-      const job = await api<Job>("/generate", "POST", {
+      const body = {
         topic_ids: [id],
-        mode: "quiz",
+        mode,
         count,
         document_ids: ids,
         allow_partial: true,
-        target_language: translate ? language : null,
+        question_types: selectedTypes,
+        practice_goal: practiceGoal,
+      }
+      const signature = JSON.stringify(body)
+      if (requestKey.current?.signature !== signature)
+        requestKey.current = { signature, key: crypto.randomUUID() }
+      const job = await api<Job>("/generate", "POST", {
+        ...body,
+        idempotency_key: requestKey.current.key,
       })
       navigate(`generation/${job.id}`)
     } catch (error) {
@@ -162,43 +189,81 @@ export default function Generation({
                 onChange={(event) => setCount(Number(event.target.value))}
               />
               <FieldDescription>
-                {t("От 1 до 30. Каждый вопрос подходит для флеш-карт и теста.")}
+                {t("От 1 до 30. Общее количество для всех выбранных типов.")}
               </FieldDescription>
             </Field>
-            <Field orientation="horizontal">
-              <Checkbox
-                id="translate"
-                checked={translate}
-                disabled={busy}
-                onCheckedChange={(value) => setTranslate(value === true)}
-              />
-              <FieldLabel htmlFor="translate">
-                {t("Перевести вопросы на другой язык")}
-              </FieldLabel>
-            </Field>
-            {translate ? (
-              <Field>
-                <FieldLabel htmlFor="target-language">
-                  {t("Язык перевода")}
-                </FieldLabel>
-                <Input
-                  id="target-language"
-                  value={language}
-                  onChange={(event) => setLanguage(event.target.value)}
-                  pattern="[a-z]{2,3}(-[A-Za-z0-9]{2,8})?"
-                  maxLength={20}
-                />
-                <FieldDescription>
-                  {t(
-                    "pl — польский, en — английский, ru — русский, lt — литовский."
+            {mode === "quiz" && (
+              <>
+                <FieldSet>
+                  <FieldLegend>{t("Что тренируем?")}</FieldLegend>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={practiceGoal}
+                    disabled={busy}
+                    onValueChange={(value) => {
+                      if (value !== "content" && value !== "language") return
+                      setPracticeGoal(value)
+                      if (
+                        value === "content" &&
+                        selectedTypes.some(
+                          (type) => type === "ending" || type === "ordering"
+                        )
+                      ) {
+                        const compatible = selectedTypes.filter(
+                          (type) => type !== "ending" && type !== "ordering"
+                        )
+                        setSelectedTypes(
+                          compatible.length ? compatible : ["choice"]
+                        )
+                        setGoalNotice(true)
+                      } else setGoalNotice(false)
+                    }}
+                  >
+                    <ToggleGroupItem value="content">
+                      {t("Содержание темы")}
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="language">
+                      {t("Язык и грамматику")}
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                  {goalNotice && (
+                    <FieldDescription>
+                      {t(
+                        "Окончания и сборка предложения доступны для языковой практики."
+                      )}
+                    </FieldDescription>
                   )}
-                </FieldDescription>
-              </Field>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t("Вопросы будут на языке исходных материалов.")}
-              </p>
+                </FieldSet>
+                <FieldSet>
+                  <FieldLegend>{t("Типы вопросов")}</FieldLegend>
+                  <ToggleGroup
+                    type="multiple"
+                    variant="outline"
+                    value={selectedTypes}
+                    disabled={busy}
+                    className="flex-wrap"
+                    onValueChange={(types) =>
+                      setSelectedTypes(types as QuestionType[])
+                    }
+                  >
+                    {allowedTypes.map((type) => (
+                      <ToggleGroupItem key={type} value={type}>
+                        {questionLabel(type)}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                  <FieldDescription>
+                    {t(
+                      "Количество общее для выбранных типов; неподходящие задания не будут созданы."
+                    )}
+                  </FieldDescription>
+                </FieldSet>
+              </>
             )}
+            <p className="text-sm text-muted-foreground">
+              {t("Вопросы будут на языке исходных материалов.")}
+            </p>
           </FieldGroup>
         ) : (
           <Blank
@@ -219,10 +284,11 @@ export default function Generation({
           disabled={
             busy ||
             !ids.length ||
+            !selectedTypes.length ||
+            count < selectedTypes.length ||
             !Number.isInteger(count) ||
             count < 1 ||
-            count > 30 ||
-            (translate && !/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/.test(language))
+            count > 30
           }
           onClick={() => void generate()}
         >

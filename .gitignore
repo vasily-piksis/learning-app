@@ -1,5 +1,5 @@
-.venv/
-.venv-semgrep/
+.venv
+.venv-semgrep
 __pycache__/
 .pytest_cache/
 .ruff_cache/

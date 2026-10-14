@@ -187,7 +187,8 @@ export default function App() {
             key={`${id}/${section}/${cardId}`}
             id={Number(id)}
             section={section}
-            cardId={cardId ? Number(cardId) : undefined}
+            cardId={section !== "create" && cardId ? Number(cardId) : undefined}
+            createMethod={section === "create" ? cardId : undefined}
           />
         ) : page === "generate" ? (
           <Generation

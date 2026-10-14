@@ -1,3 +1,46 @@
+export type QuestionType =
+  "choice" | "written" | "gap" | "ending" | "matching" | "ordering"
+export type GapExercise = {
+  segments: ({ text: string } | { gap_id: string })[]
+  gaps: { id: string; accepted_answers: string[] }[]
+  case_sensitive: boolean
+  accepted_combinations: string[][]
+}
+export type FullExercise =
+  | { accepted_answers: string[]; case_sensitive: boolean }
+  | GapExercise
+  | { pairs: { left: string; right: string }[] }
+  | { tokens: string[]; accepted_orders: string[][] }
+export type ExerciseItem = { id: string; text: string }
+export type PublicExercise =
+  | { case_sensitive: boolean }
+  | {
+      segments: GapExercise["segments"]
+      gaps: { id: string }[]
+      case_sensitive: boolean
+    }
+  | { left: ExerciseItem[]; right: ExerciseItem[] }
+  | { tokens: ExerciseItem[] }
+export type ExerciseSubmission =
+  | { text: string }
+  | { gap_answers: Record<string, string> }
+  | { pairs: { left_id: string; right_id: string }[] }
+  | { order: string[] }
+export type GradePart = { id: string; correct: boolean }
+export type MethodAvailability = {
+  ready_count: number
+  draft_count: number
+  needs_options_count: number
+  preparation_job_id: number | null
+  preparation_status: string | null
+  has_ready_materials: boolean
+  last_outcome: {
+    method: string
+    source_fingerprint: string
+    reason: string
+    stale: boolean
+  } | null
+}
 export type Mode = "flashcard" | "quiz"
 export type User = {
   id: number
@@ -13,6 +56,7 @@ export type Topic = {
   version: number
   card_count: number
   document_count: number
+  practice_availability?: Record<string, MethodAvailability>
 }
 export type Document = {
   id: number
@@ -41,6 +85,8 @@ export type Source = {
   end_seconds?: number
 }
 export type Card = {
+  question_type?: QuestionType
+  exercise?: FullExercise | PublicExercise | null
   id: number
   topic_id: number
   question: string
@@ -72,9 +118,21 @@ export type Job = {
     text?: string
     example?: string | null
     sources?: Source[]
+    unsupported_types?: { question_type: QuestionType; reason: string }[]
+    candidates?: {
+      card_id: number
+      version: number
+      options: string[]
+      correct_index: number | null
+      correct_indices: number[]
+    }[]
+    applied_card_ids?: number[]
+    discarded?: boolean
   } | null
 }
 export type StudySession = {
+  question_types?: Record<string, number>
+  practice_method?: string
   review?: {
     position: number
     card: Card
@@ -97,6 +155,10 @@ export type StudySession = {
   card?: Card | null
 }
 export type Feedback = {
+  submission?:
+    ExerciseSubmission | { choices: number[] } | { remembered: boolean }
+  parts?: GradePart[]
+  message_code?: string | null
   session_id: number
   position: number
   correct: boolean

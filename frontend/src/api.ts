@@ -5,9 +5,11 @@ export function setCsrf(token: string) {
 }
 export class APIError extends Error {
   status: number
-  constructor(message: string, status: number) {
+  detail?: unknown
+  constructor(message: string, status: number, detail?: unknown) {
     super(message)
     this.status = status
+    this.detail = detail
   }
 }
 export async function api<T>(
@@ -45,10 +47,15 @@ export async function api<T>(
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith("/auth/"))
       window.dispatchEvent(new Event("auth-expired"))
-    const message = Array.isArray(result.detail)
+    const detail = result?.detail
+    const message = Array.isArray(detail)
       ? "Проверьте заполненные поля и выбранные материалы"
-      : result.detail || "Не удалось выполнить запрос"
-    throw new APIError(message, response.status)
+      : typeof detail === "string"
+        ? detail
+        : typeof detail?.message === "string"
+          ? detail.message
+          : "Не удалось выполнить запрос"
+    throw new APIError(message, response.status, detail)
   }
   return result as T
 }

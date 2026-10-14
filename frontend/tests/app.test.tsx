@@ -784,7 +784,9 @@ test("topic creation selects new materials and generates a bank for both modes",
         count: 10,
         document_ids: [2],
         allow_partial: true,
-        target_language: null,
+        question_types: ["choice"],
+        practice_goal: "content",
+        idempotency_key: expect.any(String),
       })
       return { id: 5 }
     },

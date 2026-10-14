@@ -46,7 +46,11 @@ def test_delete_topic_preserves_session_history_repeat_explain_and_other_topics(
     session = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
     client.post(
         f"/api/study/{session['id']}/answer",
-        json={"position": 0, "choice": 1, "idempotency_key": "wrong"},
+        json={
+            "position": 0,
+            "choice": session["card"]["options"].index("Дон"),
+            "idempotency_key": "wrong",
+        },
     )
     assert client.delete(f"/api/topics/{topic}").status_code == 200
     assert client.get(f"/api/topics/{topic}").status_code == 404

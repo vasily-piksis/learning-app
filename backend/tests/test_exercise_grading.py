@@ -84,3 +84,44 @@ def test_solution_criteria_are_not_returned_before_reveal(kind):
     assert "accepted_answers" not in serialized and "accepted_combinations" not in serialized
     assert "answer" not in public
     assert "answer" in e.public_exercise(s, True)
+
+
+def test_choice_shuffle_remaps_all_correct_answers_without_changing_original(monkeypatch):
+    import random
+
+    e = exercise_module()
+    monkeypatch.setattr(random.SystemRandom, "shuffle", lambda self, values: values.reverse())
+    original = {
+        "question_type": "choice",
+        "mode": "quiz",
+        "exercise": None,
+        "options": ["stalas", "lentelė", "namas"],
+        "correct_indices": [0, 1],
+        "correct_index": None,
+        "answer": "stalas / lentelė",
+        "sources": [],
+    }
+    shuffled = e.build_snapshot(original)
+    assert shuffled["options"] == ["namas", "lentelė", "stalas"]
+    assert shuffled["correct_indices"] == [1, 2] and shuffled["correct_index"] is None
+    assert e.grade_answer(shuffled, {"choices": [1, 2]}).correct
+    assert not e.grade_answer(shuffled, {"choices": [0, 1]}).correct
+    assert original["options"] == ["stalas", "lentelė", "namas"]
+
+
+def test_legacy_single_correct_choice_is_remapped_in_new_snapshot(monkeypatch):
+    import random
+
+    e = exercise_module()
+    monkeypatch.setattr(random.SystemRandom, "shuffle", lambda self, values: values.reverse())
+    shuffled = e.build_snapshot(
+        {
+            "mode": "quiz",
+            "options": ["correct", "wrong"],
+            "correct_index": 0,
+            "answer": "correct",
+            "sources": [],
+        }
+    )
+    assert shuffled["options"] == ["wrong", "correct"]
+    assert shuffled["correct_index"] == 1 and shuffled["correct_indices"] == [1]

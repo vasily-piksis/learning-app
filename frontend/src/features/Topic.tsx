@@ -26,10 +26,12 @@ export default function Topic({
   id,
   section,
   cardId,
+  createMethod,
 }: {
   id: number
   section?: string
   cardId?: number
+  createMethod?: string
 }) {
   const topics = useQuery<TopicData[]>("/topics")
   const topic = topics.data?.find((topic) => topic.id === id)
@@ -101,7 +103,7 @@ export default function Topic({
       ) : section === "questions" || section === "question" ? (
         <Questions topic={topic} cardId={cardId} />
       ) : section === "create" ? (
-        <Generation initialTopics={[id]} />
+        <Generation initialTopics={[id]} initialMethod={createMethod} />
       ) : (
         <>
           <p className="text-muted-foreground">

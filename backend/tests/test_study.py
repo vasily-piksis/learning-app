@@ -35,14 +35,23 @@ def test_quiz_snapshot_idempotency_and_stale_tabs(client, app):
         client.get(f"/api/study/{session['id']}").json()["card"]["question"] == current["question"]
     )
     route = f"/api/study/{session['id']}/answer"
-    payload = {"position": 0, "choice": 0, "idempotency_key": "one-answer"}
+    payload = {
+        "position": 0,
+        "choice": current["options"].index("Нил"),
+        "idempotency_key": "one-answer",
+    }
     result = client.post(route, json=payload)
     assert result.status_code == 200, result.text
     assert result.json()["correct"] is True
     assert result.json()["card"]["answer"] == "Нил"
     assert client.post(route, json=payload).json() == result.json()
     assert client.post(route, json={**payload, "idempotency_key": "stale-tab"}).status_code == 409
-    assert client.post(route, json={**payload, "choice": 1}).status_code == 409
+    assert (
+        client.post(
+            route, json={**payload, "choice": (payload["choice"] + 1) % len(current["options"])}
+        ).status_code
+        == 409
+    )
     resumed = client.get(f"/api/study/{session['id']}").json()
     assert resumed["position"] == 1 and resumed["answered"] == 1
 
@@ -138,3 +147,53 @@ def test_saved_quiz_cards_can_be_studied_as_flashcards_without_mutation(client, 
     assert result.status_code == 200 and result.json()["correct"] is False
     quiz = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
     assert quiz["card"]["options"] and "correct_index" not in quiz["card"]
+
+
+def test_shuffle_is_frozen_on_resume_and_repeated_with_remapped_answers(client, app, monkeypatch):
+    import random
+
+    from app.models import SessionCard
+    from sqlalchemy import select
+
+    topic, cards = saved_cards(client, app, count=3)
+    shuffles = []
+
+    def reverse(self, values):
+        shuffles.append(list(values))
+        values.reverse()
+
+    monkeypatch.setattr(random.SystemRandom, "shuffle", reverse)
+    session = client.post("/api/study", json={"topic_ids": [topic], "mode": "quiz"}).json()
+    assert len(shuffles) == 4  # Once for questions, once for each option bank.
+    with app.state.db.session() as db:
+        frozen = list(
+            db.scalars(
+                select(SessionCard)
+                .where(SessionCard.session_id == session["id"])
+                .order_by(SessionCard.position)
+            )
+        )
+        assert [item.snapshot["id"] for item in frozen] == [c["id"] for c in reversed(cards)]
+    assert session["card"]["options"] == ["Дон", "Волга", "Нил"]
+    assert client.get(f"/api/study/{session['id']}").json()["card"] == session["card"]
+    assert len(shuffles) == 4
+    client.post(
+        f"/api/study/{session['id']}/answer",
+        json={"position": 0, "choice": 0, "idempotency_key": "wrong-shuffled"},
+    )
+    repeated = client.post(f"/api/study/{session['id']}/repeat").json()
+    assert len(shuffles) == 6
+    assert repeated["card"]["options"] == ["Нил", "Волга", "Дон"]
+    feedback = client.post(
+        f"/api/study/{repeated['id']}/answer",
+        json={"position": 0, "choice": 0, "idempotency_key": "correct-repeated"},
+    ).json()
+    assert feedback["correct"] is True
+    history = client.get(f"/api/study/{session['id']}").json()
+    assert history["review"][0]["card"]["options"] == ["Дон", "Волга", "Нил"]
+    assert history["review"][0]["correct"] is False
+    library = client.get(f"/api/cards?topic_id={topic}").json()
+    assert all(
+        card["options"] == ["Нил", "Волга", "Дон"] and card["correct_indices"] == [0]
+        for card in library
+    )

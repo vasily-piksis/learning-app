@@ -34,11 +34,15 @@ def test_multiple_answers_require_exact_set_and_keep_history(client, app, choice
     assert session["card"]["multiple_answers"] is True
     assert "correct_indices" not in session["card"] and "correct_index" not in session["card"]
     route = f"/api/study/{session['id']}/answer"
+    choices = [session["card"]["options"].index(card["options"][i]) for i in choices]
+    expected_indices = sorted(
+        session["card"]["options"].index(text) for text in ["стол", "таблица"]
+    )
     payload = {"position": 0, "choices": choices, "idempotency_key": "multiple"}
     result = client.post(route, json=payload)
     assert result.status_code == 200, result.text
     assert result.json()["correct"] is correct
-    assert result.json()["card"]["correct_indices"] == [0, 1]
+    assert result.json()["card"]["correct_indices"] == expected_indices
     assert (
         client.post(route, json={**payload, "choices": list(reversed(choices))}).json()
         == result.json()

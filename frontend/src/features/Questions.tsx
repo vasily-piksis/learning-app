@@ -1,4 +1,6 @@
 import { correctIndices } from "@/lib/answers"
+import { questionLabel } from "@/lib/exercises"
+import ExerciseSolution from "./exercises/ExerciseSolution"
 import { t } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -55,7 +57,7 @@ export default function Questions({
               <CardTitle>{current.question}</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <p className="whitespace-pre-wrap">{current.answer}</p>
+              <ExerciseSolution card={current} />
               {current.options.length > 0 && (
                 <ol className="flex flex-col gap-2">
                   {current.options.map((option, index) => (
@@ -94,6 +96,9 @@ export default function Questions({
                 <a href={`${root}/question/${card.id}`}>{card.question}</a>
               </CardTitle>
               <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">
+                  {questionLabel(card.question_type)}
+                </Badge>
                 <Badge variant="outline">
                   {card.status === "saved"
                     ? t("Готов к занятиям")

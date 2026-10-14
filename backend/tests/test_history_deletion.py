@@ -155,7 +155,11 @@ def test_repeat_and_deletion_serialize_before_reading_snapshots(client, app, mon
     identifier = start(client, topic)
     client.post(
         f"/api/study/{identifier}/answer",
-        json={"position": 0, "choice": 1, "idempotency_key": "repeat-delete"},
+        json={
+            "position": 0,
+            "choice": client.get(f"/api/study/{identifier}").json()["card"]["options"].index("Дон"),
+            "idempotency_key": "repeat-delete",
+        },
     )
     captured, release = Event(), Event()
     original_new_session = study.new_session

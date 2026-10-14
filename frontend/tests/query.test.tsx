@@ -51,3 +51,26 @@ test("does not show another resource's data after navigation", async () => {
   await act(async () => finish(new Response(JSON.stringify([{ id: 2 }]))))
   await waitFor(() => expect(result.current.data).toEqual([{ id: 2 }]))
 })
+
+test("structured API errors retain the human-readable message", async () => {
+  const { api, APIError } = await import("../src/api")
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            detail: {
+              message: "Подготовьте задания выбранного типа",
+              missing_pairs: [{ topic_id: 2, question_type: "written" }],
+            },
+          }),
+          { status: 422, headers: { "Content-Type": "application/json" } }
+        )
+    )
+  )
+  await expect(api("/study", "POST", {})).rejects.toThrow(
+    "Подготовьте задания выбранного типа"
+  )
+  await expect(api("/study", "POST", {})).rejects.toBeInstanceOf(APIError)
+})
