@@ -59,6 +59,33 @@ function initialImagePrompt(card: Card, slot: ImageSlot) {
   return `Educational illustration without text: ${text}`.slice(0, 2000)
 }
 
+function imageJobResponse(value: unknown): ImageGenerationJob {
+  const job = value as Partial<ImageGenerationJob> | null
+  if (
+    !job ||
+    typeof job !== "object" ||
+    !Number.isSafeInteger(job.id) ||
+    (job.id ?? 0) <= 0 ||
+    job.kind !== "generate_image" ||
+    ![
+      "queued",
+      "running",
+      "succeeded",
+      "failed",
+      "unknown",
+      "cancelled",
+    ].includes(job.status || "") ||
+    !("result" in job) ||
+    (job.result !== null &&
+      (typeof job.result !== "object" || Array.isArray(job.result)))
+  ) {
+    // api() may resolve an error object when a successful HTTP body is unreadable.
+    // Keep the counted request frozen until an actual job response settles it.
+    throw new APIError("Не удалось прочитать ответ сервера", 0)
+  }
+  return job as ImageGenerationJob
+}
+
 function PaidImageControls({
   card,
   slot,
@@ -103,7 +130,7 @@ function PaidImageControls({
       const revision = mutation.current.revision
       loading = true
       try {
-        const next = await api<ImageGenerationJob>(`/jobs/${jobId}`)
+        const next = imageJobResponse(await api<unknown>(`/jobs/${jobId}`))
         if (alive && revision === mutation.current.revision) {
           setLocalJob(next)
           setError(null)
@@ -129,10 +156,8 @@ function PaidImageControls({
     setBusy(true)
     setError(null)
     try {
-      const next = await api<ImageGenerationJob>(
-        request.current.path,
-        "POST",
-        request.current.body
+      const next = imageJobResponse(
+        await api<unknown>(request.current.path, "POST", request.current.body)
       )
       setLocalJob(next)
       request.current = null

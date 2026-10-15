@@ -866,3 +866,92 @@ test("budget reset uses the selected Polish UI locale and the configured budget 
     )
   ).toBeVisible()
 })
+
+test.each(["truncated JSON", "body read failure", "invalid job envelope"])(
+  "unreadable successful paid response (%s) preserves its endpoint, body and key",
+  async (failure) => {
+    paidServer()
+    const fetch = globalThis.fetch
+    const requests: { path: string; body: unknown }[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (path.endsWith("/generate-image")) {
+          requests.push({ path, body: JSON.parse(String(init?.body)) })
+          if (requests.length === 1) {
+            if (failure === "truncated JSON")
+              return new Response('{"id":21,"status":', { status: 200 })
+            if (failure === "invalid job envelope")
+              return new Response(
+                JSON.stringify({ id: 21, status: "queued" }),
+                { status: 200 }
+              )
+            const response = new Response("{}", { status: 200 })
+            vi.spyOn(response, "json").mockRejectedValue(
+              new TypeError("body interrupted")
+            )
+            return response
+          }
+        }
+        return fetch(path, init)
+      })
+    )
+    render(<EditQuestion card={card} onSaved={() => {}} />)
+    await edit()
+    const slot = screen.getByRole("group", { name: "Question image" })
+    const generate = within(slot).getByRole("button", {
+      name: "Generate image (paid)",
+    })
+    await waitFor(() => expect(generate).toBeEnabled())
+    await userEvent.click(generate)
+    const check = await within(slot).findByRole("button", {
+      name: "Check the same request",
+    })
+    expect(generate).toBeDisabled()
+    expect(within(slot).getByLabelText("Image prompt")).toBeDisabled()
+    expect(requests).toHaveLength(1)
+    await userEvent.click(check)
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toEqual(requests[0])
+    expect(generate).toBeDisabled()
+    expect(
+      within(slot).getByText(
+        "Image generation in progress. You can return later."
+      )
+    ).toBeVisible()
+  }
+)
+
+test("an unreadable job poll retains pending state and cannot expose fresh paid generation", async () => {
+  paidServer([
+    {
+      id: 21,
+      kind: "generate_image",
+      card_id: 1,
+      slot: "question",
+      status: "running",
+      result: null,
+    },
+  ])
+  const fetch = globalThis.fetch
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, init?: RequestInit) =>
+      path === "/api/jobs/21"
+        ? new Response('{"id":21,"status":', { status: 200 })
+        : fetch(path, init)
+    )
+  )
+  render(<EditQuestion card={card} onSaved={() => {}} />)
+  await edit()
+  const slot = screen.getByRole("group", { name: "Question image" })
+  await within(slot).findByRole("alert", {}, { timeout: 2500 })
+  expect(
+    within(slot).getByRole("button", { name: "Generate image (paid)" })
+  ).toBeDisabled()
+  expect(
+    within(slot).getByText(
+      "Image generation in progress. You can return later."
+    )
+  ).toBeVisible()
+})
