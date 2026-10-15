@@ -51,7 +51,7 @@ def material_fingerprint(db, topic_id):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def practice_availability(db, topic_id, user_id=None):
+def practice_availability(db, topic_id, user_id=None, settings=None):
     cards = list(
         db.scalars(select(Card).where(Card.topic_id == topic_id, Card.status != "deleted"))
     )
@@ -62,9 +62,11 @@ def practice_availability(db, topic_id, user_id=None):
     )
     has_materials = any(value.strip() for value in source_texts)
     result = {}
-    for method in ("flashcard", *QUESTION_TYPES):
+    for method in ("flashcard", *QUESTION_TYPES, "free_response"):
         relevant = (
-            cards if method == "flashcard" else [c for c in cards if c.question_type == method]
+            [c for c in cards if c.question_type != "free_response"]
+            if method == "flashcard"
+            else [c for c in cards if c.question_type == method]
         )
         result[method] = {
             "ready_count": sum(
@@ -81,6 +83,11 @@ def practice_availability(db, topic_id, user_id=None):
             "has_ready_materials": has_materials,
             "last_outcome": None,
         }
+    from .evaluations import runtime_available
+
+    result["free_response"]["runtime_unavailable"] = settings is None or not runtime_available(
+        settings
+    )
     if user_id is None:
         return result
     current = material_fingerprint(db, topic_id)

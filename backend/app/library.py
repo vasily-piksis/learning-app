@@ -42,7 +42,7 @@ def subject_data(db, value):
     }
 
 
-def topic_data(db, value, user_id=None):
+def topic_data(db, value, user_id=None, settings=None):
     from .practice import practice_availability
 
     return {
@@ -50,7 +50,7 @@ def topic_data(db, value, user_id=None):
         "subject_id": value.subject_id,
         "name": value.name,
         "version": value.version,
-        "practice_availability": practice_availability(db, value.id, user_id),
+        "practice_availability": practice_availability(db, value.id, user_id, settings),
         "card_count": db.scalar(
             select(func.count(Card.id)).where(Card.topic_id == value.id, Card.status == "saved")
         ),
@@ -96,13 +96,21 @@ def topics(request: Request, subject_id: int | None = None):
         query = select(Topic).where(Topic.deleted.is_(False)).order_by(Topic.id)
         if subject_id is not None:
             query = query.where(Topic.subject_id == subject_id)
-        return [topic_data(db, value, require_user(request).id) for value in db.scalars(query)]
+        return [
+            topic_data(db, value, require_user(request).id, request.app.state.settings)
+            for value in db.scalars(query)
+        ]
 
 
 @router.get("/topics/{identifier}")
 def topic(identifier: int, request: Request):
     with request.app.state.db.session() as db:
-        return topic_data(db, get_or_404(db, Topic, identifier), require_user(request).id)
+        return topic_data(
+            db,
+            get_or_404(db, Topic, identifier),
+            require_user(request).id,
+            request.app.state.settings,
+        )
 
 
 @router.post("/topics")
@@ -113,7 +121,7 @@ def new_topic(body: TopicBody, request: Request):
         value = Topic(name=body.name, subject_id=body.subject_id)
         db.add(value)
         db.flush()
-        return topic_data(db, value, require_user(request).id)
+        return topic_data(db, value, require_user(request).id, request.app.state.settings)
 
 
 @router.patch("/topics/{identifier}")
@@ -121,7 +129,7 @@ def rename_topic(identifier: int, body: NameBody, request: Request):
     with request.app.state.db.session() as db:
         value = get_or_404(db, Topic, identifier)
         value.name = body.name
-        return topic_data(db, value, require_user(request).id)
+        return topic_data(db, value, require_user(request).id, request.app.state.settings)
 
 
 def inspect_upload(data: bytes):

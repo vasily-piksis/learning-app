@@ -1,9 +1,10 @@
+import copy
 import random
 from dataclasses import asdict
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, model_validator
 from sqlalchemy import delete, func, select, text
 
 from . import exercises
@@ -11,7 +12,17 @@ from .auth import require_user
 from .exercises import QuestionType
 from .jobs import card_data, job_data
 from .library import get_or_404
-from .models import Attempt, Card, Explanation, Job, SessionCard, StudySession, Topic, now
+from .models import (
+    Attempt,
+    Card,
+    Evaluation,
+    Explanation,
+    Job,
+    SessionCard,
+    StudySession,
+    Topic,
+    now,
+)
 from .practice import ready_for_quiz
 from .quiz import correct_indices
 from .sources import available_sources
@@ -23,7 +34,8 @@ class StartBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     topic_ids: list[StrictInt] = Field(min_length=1, max_length=30)
     mode: Literal["quiz", "flashcard"]
-    question_types: list[QuestionType] | None = Field(default=None, min_length=1, max_length=6)
+    question_types: list[QuestionType] | None = Field(default=None, min_length=1, max_length=7)
+    include_ai_evaluated: StrictBool = False
 
     @model_validator(mode="after")
     def distinct_selection(self):
@@ -35,6 +47,12 @@ class StartBody(BaseModel):
             raise ValueError("Выберите разные способы проверки")
         if self.mode == "flashcard" and self.question_types is not None:
             raise ValueError("Флеш-карты используют вопросы всех типов")
+        if (
+            self.question_types
+            and "free_response" in self.question_types
+            and not self.include_ai_evaluated
+        ):
+            raise ValueError("Подтвердите платную проверку свободного ответа")
         return self
 
 
@@ -53,6 +71,7 @@ class AnswerBody(PositionBody):
     choices: list[StrictInt] | None = None
     remembered: bool | None = None
     text: StrictStr | None = Field(default=None, max_length=1000)
+    free_text: StrictStr | None = Field(default=None, max_length=10000)
     gap_answers: dict[StrictStr, StrictStr] | None = None
     pairs: list[dict[StrictStr, StrictStr]] | None = Field(default=None, max_length=8)
     order: list[StrictStr] | None = Field(default=None, max_length=20)
@@ -84,6 +103,11 @@ def at_position(db, session_id, position):
 
 
 def public_card(snapshot, revealed=False, db=None, session_card=None):
+    if snapshot.get("question_type") == "free_response" and db is not None:
+        revealed = bool(
+            session_card
+            and db.scalar(select(Attempt.id).where(Attempt.session_card_id == session_card.id))
+        )
     value = exercises.public_exercise(snapshot, revealed)
     if db is not None:
         value["sources"] = available_sources(db, value["sources"])
@@ -103,7 +127,15 @@ def stored_submission(attempt, snapshot):
 
 
 def grading_data(attempt):
-    grading = attempt.value.get("_grading", {})
+    grading = attempt.value.get("_grading") or {}
+    if grading.get("version") == 2:
+        from .free_responses import StoredEvaluationGrade
+
+        return StoredEvaluationGrade.model_validate(grading).model_dump(
+            exclude={"version", "voice"}
+        )
+    if grading and grading.get("version") != 1:
+        raise ValueError("Неизвестная версия оценки")
     return {"parts": grading.get("parts", []), "message_code": grading.get("message_code")}
 
 
@@ -194,9 +226,17 @@ def new_session(db, user_id, topics, mode, snapshots):
             for k, v in snapshot.items()
             if k not in {"images", "_image_source_session_card_id"}
         }
-        card = SessionCard(
-            session_id=value.id, position=position, snapshot=exercises.build_snapshot(clean)
-        )
+        if clean.get("question_type") == "free_response":
+            from .quiz import build_free_snapshot
+
+            frozen = (
+                copy.deepcopy(clean)
+                if source_session is not None
+                else build_free_snapshot(clean, clean["exercise"]["source_fragments"])
+            )
+        else:
+            frozen = exercises.build_snapshot(clean)
+        card = SessionCard(session_id=value.id, position=position, snapshot=frozen)
         db.add(card)
         db.flush()
         copy_images(
@@ -209,6 +249,10 @@ def new_session(db, user_id, topics, mode, snapshots):
 @router.post("")
 def start(body: StartBody, request: Request):
     user = require_user(request)
+    if body.question_types and "free_response" in body.question_types:
+        from .evaluations import require_available
+
+        require_available(request.app.state.settings)
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         for identifier in body.topic_ids:
@@ -229,7 +273,11 @@ def start(body: StartBody, request: Request):
             ]
             selected = body.question_types
             if selected is None:
-                selected = sorted(set.intersection(*types_by_topic)) if types_by_topic else []
+                selected = (
+                    sorted(set.intersection(*types_by_topic) - {"free_response"})
+                    if types_by_topic
+                    else []
+                )
                 if not selected:
                     raise HTTPException(
                         422,
@@ -256,6 +304,7 @@ def start(body: StartBody, request: Request):
                 )
             cards = [c for c in ready if c.question_type in selected]
         else:
+            cards = [c for c in cards if c.question_type != "free_response"]
             missing = [
                 {"topic_id": topic_id, "question_type": "flashcard"}
                 for topic_id in body.topic_ids
@@ -333,13 +382,16 @@ def delete_history(body: DeleteHistoryBody, request: Request):
         card_ids = select(SessionCard.id).where(SessionCard.session_id.in_(identifiers))
         for job in db.scalars(
             select(Job).where(
-                Job.kind == "explain",
+                Job.kind.in_(
+                    ["explain", "evaluate_response", "prepare_picture", "transcribe_answer"]
+                ),
                 Job.payload["session_card_id"].as_integer().in_(card_ids),
             )
         ):
             # Keep the ID reserved so an in-flight worker cannot write into a new job.
             job.status, job.payload, job.result, job.error = "deleted", {}, None, None
         db.execute(delete(Explanation).where(Explanation.session_card_id.in_(card_ids)))
+        db.execute(delete(Evaluation).where(Evaluation.session_card_id.in_(card_ids)))
         db.execute(delete(Attempt).where(Attempt.session_card_id.in_(card_ids)))
         db.execute(delete(SessionCard).where(SessionCard.session_id.in_(identifiers)))
         for session in sessions:
@@ -402,6 +454,20 @@ def answer(identifier: int, body: AnswerBody, request: Request):
             )
         except exercises.InvalidSubmission as error:
             raise HTTPException(422, str(error)) from error
+        if card.snapshot.get("question_type") == "free_response":
+            from .evaluations import answer_evaluation
+
+            return answer_evaluation(
+                db, request.app.state.settings, session, card, user.id, body.idempotency_key, value
+            )
+        from .evaluations import key_used
+
+        if key_used(db, user.id, body.idempotency_key) and not db.scalar(
+            select(Attempt.id).where(
+                Attempt.user_id == user.id, Attempt.idempotency_key == body.idempotency_key
+            )
+        ):
+            raise HTTPException(409, "Идентификатор запроса уже использован")
         prior = db.scalar(
             select(Attempt).where(
                 Attempt.user_id == user.id, Attempt.idempotency_key == body.idempotency_key
@@ -510,7 +576,9 @@ def explain(identifier: int, body: ExplainBody, request: Request):
         owned(db, identifier, user.id)
         card = at_position(db, identifier, body.position)
         attempted = db.scalar(select(Attempt.id).where(Attempt.session_card_id == card.id))
-        if not card.revealed and attempted is None:
+        if attempted is None and (
+            not card.revealed or card.snapshot.get("question_type") == "free_response"
+        ):
             raise HTTPException(409, "Сначала откройте ответ или ответьте на тест")
         if not body.question.strip():
             raise HTTPException(422, "Напишите вопрос")

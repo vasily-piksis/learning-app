@@ -2,6 +2,7 @@ import hashlib
 import json
 import threading
 from collections import Counter
+from time import monotonic as maintenance_clock
 from typing import Literal
 
 import pymupdf
@@ -96,6 +97,8 @@ def bind_request(job, key, body_fingerprint):
 
 def job_data(job, db=None):
     result = job.result
+    if job.kind in {"evaluate_response", "prepare_picture", "transcribe_answer"}:
+        result = None
     if db is not None and job.kind == "explain" and result:
         result = {**result, "sources": available_sources(db, result["sources"])}
     return {
@@ -125,8 +128,13 @@ def recover_jobs(database):
     from .image_generation import recover_image_jobs
 
     recover_image_jobs(database)
+    from .evaluations import recover_evaluations
+
+    recover_evaluations(database)
     with database.session() as db:
-        for job in db.scalars(select(Job).where(Job.status == "running")):
+        for job in db.scalars(
+            select(Job).where(Job.status == "running", Job.kind != "evaluate_response")
+        ):
             job.status = "failed"
             job.error = "Задача прервана перезапуском. Можно повторить вручную"
             if job.kind in {"ingest", "youtube"}:
@@ -279,6 +287,11 @@ def run_job(database, ai, identifier):
             return
         job = db.get(Job, identifier)
         kind, payload, user_id = job.kind, job.payload, job.user_id
+    if kind == "evaluate_response":
+        from .evaluations import run_evaluation_job
+
+        run_evaluation_job(database, identifier, payload["revision"])
+        return
     try:
         if kind == "generate_image":
             from .image_generation import run_image_job
@@ -431,7 +444,14 @@ def run_job(database, ai, identifier):
 
 
 def worker_loop(database, ai, stop: threading.Event):
+    from .evaluations import cleanup_evaluation_requests
+
+    next_cleanup = 0.0
     while not stop.is_set():
+        current = maintenance_clock()
+        if current >= next_cleanup:
+            cleanup_evaluation_requests(database)
+            next_cleanup = current + 3600
         with database.session() as db:
             identifier = db.scalar(
                 select(Job.id).where(Job.status == "queued").order_by(Job.id).limit(1)
@@ -464,7 +484,16 @@ def job(identifier: int, request: Request):
     with request.app.state.db.session() as db:
         value = get_or_404(db, Job, identifier)
         if (
-            value.kind in {"explain", "prepare_quiz", "regenerate", "generate_image"}
+            value.kind
+            in {
+                "explain",
+                "prepare_quiz",
+                "regenerate",
+                "generate_image",
+                "evaluate_response",
+                "prepare_picture",
+                "transcribe_answer",
+            }
             and value.user_id != user.id
         ):
             raise HTTPException(404, "Не найдено")
@@ -478,10 +507,21 @@ def retry(identifier: int, request: Request):
         db.execute(text("BEGIN IMMEDIATE"))
         value = get_or_404(db, Job, identifier)
         if (
-            value.kind in {"explain", "prepare_quiz", "regenerate", "generate_image"}
+            value.kind
+            in {
+                "explain",
+                "prepare_quiz",
+                "regenerate",
+                "generate_image",
+                "evaluate_response",
+                "prepare_picture",
+                "transcribe_answer",
+            }
             and value.user_id != user.id
         ):
             raise HTTPException(404, "Не найдено")
+        if value.kind in {"evaluate_response", "prepare_picture", "transcribe_answer"}:
+            raise HTTPException(409, "Используйте отдельный явный платный повтор")
         if value.kind == "generate_image":
             raise HTTPException(409, "Для картинки используйте отдельный явный платный повтор")
         if value.status != "failed":

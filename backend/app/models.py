@@ -247,3 +247,42 @@ class ImageRequest(Base):
     settings: Mapped[dict] = mapped_column(JSON)
     usage: Mapped[dict] = mapped_column(JSON, default=dict)
     error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class Evaluation(Base):
+    __tablename__ = "evaluations"
+    __table_args__ = (
+        UniqueConstraint("session_card_id"),
+        UniqueConstraint("user_id", "request_key"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_card_id: Mapped[int] = mapped_column(ForeignKey("session_cards.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    request_key: Mapped[str] = mapped_column(String(80))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    request_keys: Mapped[list] = mapped_column(JSON, default=list)
+    submission: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    staged_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    applied_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created: Mapped[datetime] = mapped_column(default=now)
+    updated: Mapped[datetime] = mapped_column(default=now, onupdate=now)
+
+
+class EvaluationRequest(Base):
+    __tablename__ = "evaluation_requests"
+    __table_args__ = (UniqueConstraint("job_id", "attempt_no"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    request_key: Mapped[str] = mapped_column(String(80))
+    reserved_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="reserved")
+    model: Mapped[str] = mapped_column(String(200))
+    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
