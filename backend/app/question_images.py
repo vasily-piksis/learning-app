@@ -133,6 +133,7 @@ def library_images(db, card_id):
             values[link.slot] = metadata(
                 asset, f"/api/cards/{card_id}/images/{link.slot}", link.alt
             )
+            values[link.slot]["image_role"] = link.image_role
     return values
 
 
@@ -148,6 +149,7 @@ def session_images(db, card, revealed):
                 f"/api/study/{card.session_id}/cards/{card.position}/images/{link.slot}",
                 link.alt,
             )
+            values[link.slot]["image_role"] = link.image_role
     return values
 
 
@@ -161,7 +163,11 @@ def copy_images(db, target, source_session_card_id=None, source_card_id=None):
     for link in db.scalars(query):
         db.add(
             SessionImage(
-                session_card_id=target.id, asset_id=link.asset_id, slot=link.slot, alt=link.alt
+                session_card_id=target.id,
+                asset_id=link.asset_id,
+                slot=link.slot,
+                alt=link.alt,
+                image_role=link.image_role,
             )
         )
 
@@ -170,9 +176,20 @@ def apply_updates(db, card, updates, user_id):
     if updates is None:
         return
     for slot, update in updates.items():
+        if card.question_type == "picture_description" and slot == "question":
+            update = update.model_copy(update={"alt": ""})
         current = db.scalar(
             select(CardImage).where(CardImage.card_id == card.id, CardImage.slot == slot)
         )
+        if (
+            card.question_type == "picture_description"
+            and slot == "question"
+            and (current.asset_id if current else None) != update.asset_id
+        ):
+            from .picture_responses import setup_of
+
+            card.exercise = setup_of(card.exercise).model_dump()
+            card.answer, card.status = "", "draft"
         if update.asset_id is None:
             if current:
                 db.delete(current)
@@ -191,8 +208,23 @@ def apply_updates(db, card, updates, user_id):
             raise HTTPException(409, "Картинка недоступна для сохранения")
         if current:
             current.asset_id, current.alt = asset.id, update.alt
+            current.image_role = (
+                "source"
+                if card.question_type == "picture_description" and slot == "question"
+                else "illustration"
+            )
         else:
-            db.add(CardImage(card_id=card.id, asset_id=asset.id, slot=slot, alt=update.alt))
+            db.add(
+                CardImage(
+                    card_id=card.id,
+                    asset_id=asset.id,
+                    slot=slot,
+                    alt=update.alt,
+                    image_role="source"
+                    if card.question_type == "picture_description" and slot == "question"
+                    else "illustration",
+                )
+            )
         asset.stage, asset.target_card_id, asset.target_version, asset.slot = (
             "ready",
             None,
@@ -434,6 +466,12 @@ def cleanup_image_assets(database, recover_writing=False, recover_ids=None):
     deleting = []
     with database.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
+        db.execute(
+            delete(JobImage).where(
+                JobImage.role == "context",
+                JobImage.job_id.in_(select(Job.id).where(Job.status.not_in(["queued", "running"]))),
+            )
+        )
         for asset in db.scalars(select(ImageAsset).where(ImageAsset.stage != "deleted")):
             card = db.get(Card, asset.target_card_id) if asset.target_card_id else None
             candidate_live = card is not None and card.status != "deleted"
@@ -495,3 +533,14 @@ def cleanup_image_assets(database, recover_writing=False, recover_ids=None):
                     None,
                     None,
                 )
+
+
+def bind_context(db, job_id, asset_id):
+    """Retry may race terminal cleanup; preserve one active context reference."""
+    existing = db.scalar(
+        select(JobImage).where(
+            JobImage.job_id == job_id, JobImage.asset_id == asset_id, JobImage.role == "context"
+        )
+    )
+    if existing is None:
+        db.add(JobImage(job_id=job_id, asset_id=asset_id, role="context"))

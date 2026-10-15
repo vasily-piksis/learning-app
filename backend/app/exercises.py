@@ -10,10 +10,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .free_responses import FreeResponseExercise
+from .free_responses import FreeResponseExercise, PictureDescriptionExercise
 
 QuestionType = Literal[
-    "choice", "written", "gap", "ending", "matching", "ordering", "free_response"
+    "choice",
+    "written",
+    "gap",
+    "ending",
+    "matching",
+    "ordering",
+    "free_response",
+    "picture_description",
 ]
 QUESTION_TYPES = ("choice", "written", "gap", "ending", "matching", "ordering")
 
@@ -142,6 +149,7 @@ class OrderingExercise(Strict):
 
 SCHEMAS = {
     "free_response": FreeResponseExercise,
+    "picture_description": PictureDescriptionExercise,
     "written": WrittenExercise,
     "gap": GapExercise,
     "ending": EndingExercise,
@@ -161,7 +169,7 @@ def validate_exercise(question_type: QuestionType, value: dict | None) -> dict |
 
 
 def solution_text(question_type: QuestionType, exercise: dict) -> str:
-    if question_type == "free_response":
+    if question_type in {"free_response", "picture_description"}:
         return exercise["model_answer"]
     if question_type == "written":
         return " / ".join(exercise["accepted_answers"])
@@ -203,7 +211,11 @@ def build_snapshot(card: dict) -> dict:
     snapshot = copy.deepcopy(card)
     kind = snapshot.get("question_type", "choice")
     value = validate_exercise(kind, original_exercise(snapshot))
-    snapshot.update(question_type=kind, snapshot_version=2, exercise=value)
+    snapshot.update(
+        question_type=kind,
+        snapshot_version=4 if kind == "picture_description" else 2,
+        exercise=value,
+    )
     if kind != "choice":
         snapshot["answer"] = solution_text(kind, value)
     if kind == "choice" and snapshot.get("mode") == "quiz":
@@ -260,7 +272,7 @@ def public_exercise(snapshot: dict, revealed: bool) -> dict:
         {k: v for k, v in s.items() if k != "text"} for s in result.get("sources", [])
     ]
     kind, value = snapshot.get("question_type", "choice"), snapshot.get("exercise")
-    if kind == "free_response":
+    if kind in {"free_response", "picture_description"}:
         fields = {"goal", "level", "language", "min_words", "max_words"}
         if revealed:
             fields |= {"model_answer", "rubric", "expected_points"}
@@ -304,7 +316,7 @@ def canonical_submission(snapshot: dict, submission: dict) -> dict:
     kind, value = snapshot.get("question_type", "choice"), snapshot.get("exercise")
     if "_grading" in submission:
         raise InvalidSubmission("Служебная оценка не принимается от клиента")
-    if kind == "free_response":
+    if kind in {"free_response", "picture_description"}:
         from .free_responses import count_words
 
         if snapshot.get("mode") != "quiz" or set(submission) not in (
@@ -392,7 +404,7 @@ def canonical_submission(snapshot: dict, submission: dict) -> dict:
 
 
 def grade_answer(snapshot: dict, submission: dict) -> GradeResult:
-    if snapshot.get("question_type") == "free_response":
+    if snapshot.get("question_type") in {"free_response", "picture_description"}:
         raise RequiresEvaluation("Для этого задания нужна проверка по критериям")
     data = canonical_submission(snapshot, submission)
     if snapshot.get("mode") == "flashcard":

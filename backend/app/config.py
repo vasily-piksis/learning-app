@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     openai_api_key: str = ""
     openai_model: str = "gpt-6-luna"
+    picture_description_enabled: bool = False
+    openai_vision_enabled: bool = False
     free_response_enabled: bool = False
     free_response_daily_request_limit: int = 100
     budget_timezone: str = "Europe/Vilnius"

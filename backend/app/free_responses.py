@@ -126,6 +126,73 @@ class FreeResponseExercise(Strict):
         return self
 
 
+class ImageEvidence(Strict):
+    kind: Literal["image"] = "image"
+    asset_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class PicturePoint(Strict):
+    id: Identifier
+    text: str = Field(min_length=1, max_length=2000)
+    essential: bool
+    sources: list[ImageEvidence] = Field(min_length=1, max_length=1)
+
+
+class PictureDraftSetup(Strict):
+    preparation_state: Literal["needs_criteria"] = "needs_criteria"
+    goal: Literal["language"] = "language"
+    language: Literal["pl", "en", "ru", "lt"]
+    level: Level
+    min_words: WordBound | None = None
+    max_words: WordBound | None = None
+
+    @model_validator(mode="after")
+    def bounds(self):
+        if (
+            self.min_words is not None
+            and self.max_words is not None
+            and self.min_words > self.max_words
+        ):
+            raise ValueError("Минимум слов превышает максимум")
+        return self
+
+
+class PictureDescriptionExercise(Strict):
+    goal: Literal["language"]
+    language: Literal["pl", "en", "ru", "lt"]
+    level: Level
+    min_words: WordBound | None = None
+    max_words: WordBound | None = None
+    model_answer: str = Field(min_length=1, max_length=4000)
+    rubric: list[RubricCriterion] = Field(min_length=1, max_length=8)
+    expected_points: list[PicturePoint] = Field(min_length=1, max_length=12)
+    source: ImageEvidence
+
+    @model_validator(mode="after")
+    def coherent(self):
+        PictureDraftSetup.model_validate(
+            {k: getattr(self, k) for k in ("goal", "language", "level", "min_words", "max_words")}
+        )
+        if sum(c.weight for c in self.rubric) != 100:
+            raise ValueError("Сумма весов критериев должна быть 100")
+        for ids in ([c.id for c in self.rubric], [p.id for p in self.expected_points]):
+            if len(ids) != len(set(ids)):
+                raise ValueError("Идентификаторы должны быть уникальны")
+        if any(source != self.source for point in self.expected_points for source in point.sources):
+            raise ValueError("Пункт должен использовать закреплённый источник")
+        return self
+
+
+def response_exercise(snapshot):
+    schema = (
+        PictureDescriptionExercise
+        if snapshot.get("question_type") == "picture_description"
+        else FreeResponseExercise
+    )
+    return schema.model_validate(snapshot["exercise"])
+
+
 class RubricScore(Strict):
     criterion_id: Identifier
     score: int = Field(ge=0, le=4)
@@ -141,7 +208,9 @@ class TextEvidence(Strict):
 class PointCheck(Strict):
     point_id: Identifier
     met: bool
-    evidence: list[TextEvidence] = Field(max_length=20)
+    evidence: list[Annotated[TextEvidence | ImageEvidence, Field(discriminator="kind")]] = Field(
+        max_length=20
+    )
 
 
 class Correction(Strict):
@@ -238,6 +307,15 @@ def validate_evaluation(
             )
     points = {point.id: point for point in exercise.expected_points}
     for check in result.point_checks:
+        if isinstance(exercise, PictureDescriptionExercise):
+            if any(
+                not isinstance(evidence, ImageEvidence) or evidence != exercise.source
+                for evidence in check.evidence
+            ):
+                raise ValueError("Недопустимый визуальный источник")
+            continue
+        if any(not isinstance(evidence, TextEvidence) for evidence in check.evidence):
+            raise ValueError("Для текстового задания нужны текстовые источники")
         refs = {source_key(source) for source in points[check.point_id].sources}
         for evidence in check.evidence:
             ref = source_key(evidence.source)

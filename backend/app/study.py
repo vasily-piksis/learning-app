@@ -34,7 +34,7 @@ class StartBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     topic_ids: list[StrictInt] = Field(min_length=1, max_length=30)
     mode: Literal["quiz", "flashcard"]
-    question_types: list[QuestionType] | None = Field(default=None, min_length=1, max_length=7)
+    question_types: list[QuestionType] | None = Field(default=None, min_length=1, max_length=8)
     include_ai_evaluated: StrictBool = False
 
     @model_validator(mode="after")
@@ -49,7 +49,7 @@ class StartBody(BaseModel):
             raise ValueError("Флеш-карты используют вопросы всех типов")
         if (
             self.question_types
-            and "free_response" in self.question_types
+            and bool({"free_response", "picture_description"} & set(self.question_types))
             and not self.include_ai_evaluated
         ):
             raise ValueError("Подтвердите платную проверку свободного ответа")
@@ -103,7 +103,7 @@ def at_position(db, session_id, position):
 
 
 def public_card(snapshot, revealed=False, db=None, session_card=None):
-    if snapshot.get("question_type") == "free_response" and db is not None:
+    if snapshot.get("question_type") in {"free_response", "picture_description"} and db is not None:
         revealed = bool(
             session_card
             and db.scalar(select(Attempt.id).where(Attempt.session_card_id == session_card.id))
@@ -249,10 +249,11 @@ def new_session(db, user_id, topics, mode, snapshots):
 @router.post("")
 def start(body: StartBody, request: Request):
     user = require_user(request)
-    if body.question_types and "free_response" in body.question_types:
+    if body.question_types and {"free_response", "picture_description"} & set(body.question_types):
         from .evaluations import require_available
 
-        require_available(request.app.state.settings)
+        for kind in set(body.question_types) & {"free_response", "picture_description"}:
+            require_available(request.app.state.settings, kind)
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         for identifier in body.topic_ids:
@@ -266,7 +267,7 @@ def start(body: StartBody, request: Request):
             )
         )
         if body.mode == "quiz":
-            ready = [card for card in cards if ready_for_quiz(card)]
+            ready = [card for card in cards if ready_for_quiz(card, db)]
             types_by_topic = [
                 {c.question_type for c in ready if c.topic_id == topic_id}
                 for topic_id in body.topic_ids
@@ -274,7 +275,9 @@ def start(body: StartBody, request: Request):
             selected = body.question_types
             if selected is None:
                 selected = (
-                    sorted(set.intersection(*types_by_topic) - {"free_response"})
+                    sorted(
+                        set.intersection(*types_by_topic) - {"free_response", "picture_description"}
+                    )
                     if types_by_topic
                     else []
                 )
@@ -304,7 +307,9 @@ def start(body: StartBody, request: Request):
                 )
             cards = [c for c in ready if c.question_type in selected]
         else:
-            cards = [c for c in cards if c.question_type != "free_response"]
+            cards = [
+                c for c in cards if c.question_type not in {"free_response", "picture_description"}
+            ]
             missing = [
                 {"topic_id": topic_id, "question_type": "flashcard"}
                 for topic_id in body.topic_ids
@@ -454,7 +459,7 @@ def answer(identifier: int, body: AnswerBody, request: Request):
             )
         except exercises.InvalidSubmission as error:
             raise HTTPException(422, str(error)) from error
-        if card.snapshot.get("question_type") == "free_response":
+        if card.snapshot.get("question_type") in {"free_response", "picture_description"}:
             from .evaluations import answer_evaluation
 
             return answer_evaluation(
@@ -577,7 +582,8 @@ def explain(identifier: int, body: ExplainBody, request: Request):
         card = at_position(db, identifier, body.position)
         attempted = db.scalar(select(Attempt.id).where(Attempt.session_card_id == card.id))
         if attempted is None and (
-            not card.revealed or card.snapshot.get("question_type") == "free_response"
+            not card.revealed
+            or card.snapshot.get("question_type") in {"free_response", "picture_description"}
         ):
             raise HTTPException(409, "Сначала откройте ответ или ответьте на тест")
         if not body.question.strip():
@@ -621,4 +627,10 @@ def explain(identifier: int, body: ExplainBody, request: Request):
         )
         db.add(value)
         db.flush()
+        if card.snapshot.get("question_type") == "picture_description":
+            from .models import JobImage
+            from .picture_responses import get_picture_evidence
+
+            evidence = get_picture_evidence(db, card.id, user.id)
+            db.add(JobImage(job_id=value.id, asset_id=evidence.asset_id, role="context"))
         return job_data(value)

@@ -24,6 +24,7 @@ export const questionLabels: Record<QuestionType, string> = {
   matching: "Пары",
   ordering: "Сборка предложения",
   free_response: "Свободный ответ",
+  picture_description: "Описание картинки",
 }
 export function questionLabel(type: QuestionType = "choice") {
   return t(questionLabels[type])
@@ -62,7 +63,10 @@ export function exerciseSolution(
   value: FullExercise | null
 ): string {
   if (!value) return ""
-  if (type === "free_response" && "model_answer" in value)
+  if (
+    (type === "free_response" || type === "picture_description") &&
+    "model_answer" in value
+  )
     return value.model_answer
   if (type === "written" && "accepted_answers" in value)
     return value.accepted_answers.join(" / ")

@@ -80,7 +80,9 @@ export function isEvaluationFeedback(
   return (
     integer(value.evaluation_id) &&
     Number(value.evaluation_id) > 0 &&
-    value.card.question_type === "free_response" &&
+    ["free_response", "picture_description"].includes(
+      String(value.card.question_type)
+    ) &&
     object(value.card.exercise) &&
     typeof value.card.exercise.model_answer === "string" &&
     Array.isArray(value.card.exercise.rubric) &&
@@ -142,11 +144,16 @@ export function isEvaluationFeedback(
         p.evidence.every(
           (e) =>
             object(e) &&
-            e.kind === "text" &&
-            object(e.source) &&
-            integer(e.source.document_id) &&
-            integer(e.source.page) &&
-            typeof e.quote === "string"
+            ((e.kind === "text" &&
+              object(e.source) &&
+              integer(e.source.document_id) &&
+              integer(e.source.page) &&
+              typeof e.quote === "string") ||
+              (e.kind === "image" &&
+                typeof e.asset_id === "string" &&
+                /^[a-f0-9]{32}$/.test(e.asset_id) &&
+                typeof e.sha256 === "string" &&
+                /^[a-f0-9]{64}$/.test(e.sha256)))
         )
     ) &&
     Array.isArray(value.corrections) &&

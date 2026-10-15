@@ -15,9 +15,9 @@ from .auth import require_user
 from .evaluation_ai import EvaluationAI
 from .free_responses import (
     EvaluationGrade,
-    FreeResponseExercise,
     InsufficientContext,
     StoredEvaluationGrade,
+    response_exercise,
     validate_evaluation,
 )
 from .models import Attempt, Evaluation, EvaluationRequest, Job, SessionCard, StudySession, now
@@ -49,13 +49,17 @@ def utc_now():
     return datetime.now(UTC)
 
 
-def runtime_available(settings):
+def runtime_available(settings, question_type="free_response"):
     try:
         ZoneInfo(settings.budget_timezone)
     except (ZoneInfoNotFoundError, ValueError):
         return False
     return bool(
-        settings.free_response_enabled
+        (
+            settings.picture_description_enabled and settings.openai_vision_enabled
+            if question_type == "picture_description"
+            else settings.free_response_enabled
+        )
         and settings.openai_api_key
         and settings.openai_model
         and len(settings.openai_model) <= 200
@@ -64,8 +68,8 @@ def runtime_available(settings):
     )
 
 
-def require_available(settings):
-    if not runtime_available(settings):
+def require_available(settings, question_type="free_response"):
+    if not runtime_available(settings, question_type):
         raise HTTPException(
             409, {"code": "runtime_unavailable", "message": ERRORS["runtime_unavailable"]}
         )
@@ -149,7 +153,7 @@ def answer_evaluation(db, settings, session, card, user_id, key, submission):
             raise HTTPException(409, "Этот ответ уже отправлен")
         data = evaluation_data(db, existing, include_submission=False)
         return JSONResponse(data, status_code=200 if existing.status == "completed" else 202)
-    require_available(settings)
+    require_available(settings, card.snapshot.get("question_type"))
     if (
         session.status != "active"
         or session.position != card.position
@@ -172,6 +176,15 @@ def answer_evaluation(db, settings, session, card, user_id, key, submission):
         fingerprint=fingerprint,
         submission=submission,
     )
+    if card.snapshot.get("question_type") == "picture_description":
+        from .picture_responses import get_picture_evidence
+        from .question_images import bind_context
+
+        try:
+            evidence = get_picture_evidence(db, card.id, user_id)
+        except ValueError:
+            raise HTTPException(409, "Источник картинки недоступен") from None
+        bind_context(db, job.id, evidence.asset_id)
     db.add(evaluation)
     db.flush()
     return JSONResponse(evaluation_data(db, evaluation, False), status_code=202)
@@ -182,10 +195,10 @@ def reserve_evaluation_request(database, job_id, request_key):
     with database.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
         evaluation = db.scalar(select(Evaluation).where(Evaluation.job_id == job_id))
-        _, _, job = live_context(db, evaluation, statuses={"running"})
+        card, _, job = live_context(db, evaluation, statuses={"running"})
         if job.status != "running" or job.payload.get("request_key") != request_key:
             raise EvaluationCancelled()
-        if not runtime_available(database.settings):
+        if not runtime_available(database.settings, card.snapshot.get("question_type")):
             raise EvaluationUnavailable()
         current = utc_now()
         zone = ZoneInfo(database.settings.budget_timezone)
@@ -232,7 +245,7 @@ def stage_evaluation(database, evaluation_id, revision, result):
         evaluation = db.get(Evaluation, evaluation_id)
         card, _, _ = live_context(db, evaluation, revision, {"running"})
         grade = validate_evaluation(
-            FreeResponseExercise.model_validate(card.snapshot["exercise"]),
+            response_exercise(card.snapshot),
             evaluation.submission["free_text"],
             result,
         )
@@ -309,11 +322,20 @@ def run_evaluation_job(database, job_id, revision):
         reservations.append(reserve_evaluation_request(database, job_id, key))
 
     try:
-        if not runtime_available(database.settings):
+        if not runtime_available(database.settings, card.snapshot.get("question_type")):
             raise EvaluationUnavailable()
-        result = EvaluationAI(database.settings).evaluate(
-            snapshot, submission["free_text"], before_request
-        )
+        if snapshot.get("question_type") == "picture_description":
+            from .picture_responses import get_picture_evidence
+
+            with database.session() as db:
+                evidence = get_picture_evidence(db, card.id, evaluation.user_id)
+            result = EvaluationAI(database.settings).evaluate(
+                snapshot, submission["free_text"], before_request, evidence=evidence
+            )
+        else:
+            result = EvaluationAI(database.settings).evaluate(
+                snapshot, submission["free_text"], before_request
+            )
         outcome = "succeeded"
         staged = stage_evaluation(database, identifier, revision, result)
         finalize_evaluation(database, identifier, revision, staged)
@@ -356,6 +378,9 @@ def run_evaluation_job(database, job_id, revision):
             if job.status == "running":
                 job.status, job.error = evaluation.status, ERRORS[code]
     finally:
+        from .question_images import cleanup_image_assets
+
+        cleanup_image_assets(database)
         with database.session() as db:
             for record in db.scalars(
                 select(EvaluationRequest).where(
@@ -455,13 +480,26 @@ def retry(identifier: int, body: RetryEvaluationBody, request: Request):
             raise HTTPException(409, "Для повтора нужен новый идентификатор")
         if evaluation.status not in {"failed", "unknown"}:
             raise HTTPException(409, "Повтор доступен только после ошибки")
-        require_available(request.app.state.settings)
+        card = db.get(SessionCard, evaluation.session_card_id)
+        require_available(
+            request.app.state.settings,
+            card.snapshot.get("question_type") if card else "free_response",
+        )
         if key_used(db, user.id, body.idempotency_key) or len(evaluation.request_keys) >= 100:
             raise HTTPException(409, "Идентификатор уже использован или достигнут лимит повторов")
         card = db.get(SessionCard, evaluation.session_card_id)
         session = db.get(StudySession, card.session_id) if card else None
         if not session or session.status != "active" or session.position != card.position:
             raise HTTPException(409, "Занятие больше не активно")
+        if card.snapshot.get("question_type") == "picture_description":
+            from .picture_responses import get_picture_evidence
+            from .question_images import bind_context
+
+            try:
+                evidence = get_picture_evidence(db, card.id, user.id)
+            except ValueError:
+                raise HTTPException(409, "Источник картинки недоступен") from None
+            bind_context(db, job.id, evidence.asset_id)
         evaluation.request_keys = [*evaluation.request_keys, body.idempotency_key]
         evaluation.revision += 1
         evaluation.status, evaluation.error_code = "queued", None

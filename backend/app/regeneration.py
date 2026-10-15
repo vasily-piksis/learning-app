@@ -87,6 +87,15 @@ def check_scope(db, payload):
     current = card_data(db, card, include_text=True)
     if fingerprint(current) != payload["source_fingerprint"]:
         raise ValueError("Вопрос или его источники изменились")
+    if payload.get("picture_source"):
+        from .picture_responses import card_evidence
+
+        evidence = card_evidence(db, card)
+        if {"kind": "image", "asset_id": evidence.asset_id, "sha256": evidence.sha256} != payload[
+            "picture_source"
+        ]:
+            raise ValueError("Источник картинки изменён")
+        return card
     if not current["sources"] or any(
         db.get(Document, s["document_id"]).status != "ready" for s in current["sources"]
     ):
@@ -101,7 +110,17 @@ def validate_candidate(db, payload, candidate):
         for key in ("topic_id", "question_type", "language", "mode")
     ):
         raise ValueError("Нельзя изменить тему, тип или язык вопроса")
-    check_refs(candidate.sources, snapshot["sources"])
+    if payload.get("picture_source"):
+        from .picture_responses import setup_of
+
+        if (
+            candidate.sources
+            or candidate.exercise.source.model_dump() != payload["picture_source"]
+            or setup_of(candidate.exercise.model_dump()).model_dump() != payload["picture_setup"]
+        ):
+            raise ValueError("Источник или настройки картинки изменены")
+    else:
+        check_refs(candidate.sources, snapshot["sources"])
     if candidate.question_type == "free_response":
         validate_free_preparation(
             candidate.model_dump(), snapshot["sources"], free_settings(snapshot["exercise"])
@@ -140,6 +159,23 @@ def start(identifier: int, body: RegenerateBody, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
+        card = db.get(Card, identifier)
+        if card and card.status != "deleted" and card.question_type == "picture_description":
+            from .picture_responses import PreparePicture, prepare, setup_of
+
+            setup = setup_of(card.exercise).model_dump(exclude={"goal", "preparation_state"})
+            # Release the transaction before the picture route acquires its write lock.
+            db.rollback()
+            return prepare(
+                identifier,
+                PreparePicture(
+                    version=body.version,
+                    idempotency_key=body.idempotency_key,
+                    another_variant=body.another_variant,
+                    **setup,
+                ),
+                request,
+            )
         signature = fingerprint(
             {"card_id": identifier, **body.model_dump(exclude={"idempotency_key"})}
         )
@@ -212,7 +248,28 @@ def start(identifier: int, body: RegenerateBody, request: Request):
 def run_regeneration(database, ai, payload, identifier):
     with database.session() as db:
         check_scope(db, payload)
-    raw = ai.regenerate(payload["snapshot"], payload["snapshot"]["sources"])
+    if payload.get("picture_source"):
+        from .picture_responses import card_evidence, prepare_with_ai
+
+        with database.session() as db:
+            card = check_scope(db, payload)
+            evidence = card_evidence(db, card)
+
+        def before_request():
+            from .evaluations import require_available
+
+            require_available(database.settings, "picture_description")
+            with database.session() as db:
+                if db.get(Job, identifier).status != "running":
+                    raise ValueError("Подготовка отменена")
+                check_scope(db, payload)
+
+        candidate = prepare_with_ai(
+            ai, payload["snapshot"], payload["picture_setup"], evidence, before_request
+        )
+        raw = Regenerated(card=candidate, insufficient_reason=None)
+    else:
+        raw = ai.regenerate(payload["snapshot"], payload["snapshot"]["sources"])
     output = Regenerated.model_validate(
         {
             "card": raw.card.model_dump() if raw.card else None,
@@ -262,6 +319,13 @@ def apply(identifier: int, body: ApplyBody, request: Request):
             raise HTTPException(409, str(e)) from e
         from .question_images import apply_updates, cleanup_image_assets
 
+        if (
+            job.payload.get("picture_source")
+            and body.image_updates
+            and "question" in body.image_updates
+            and body.image_updates["question"].asset_id != job.payload["picture_source"]["asset_id"]
+        ):
+            raise HTTPException(409, "Критерии подготовлены для другой картинки")
         apply_updates(db, card, body.image_updates, user.id)
         candidate = body.candidate
         for field in (
@@ -310,4 +374,8 @@ def discard(identifier: int, request: Request):
             if k in {"card_id", "topic_ids", "base_version", "request_keys"}
         }
         job.error = None
-        return job_data(job, db)
+        result = job_data(job, db)
+    from .question_images import cleanup_image_assets
+
+    cleanup_image_assets(request.app.state.db)
+    return result

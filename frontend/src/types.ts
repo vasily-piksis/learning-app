@@ -6,6 +6,7 @@ export type QuestionType =
   | "matching"
   | "ordering"
   | "free_response"
+  | "picture_description"
 export type FreeResponseGoal = "content" | "language"
 export type FreeResponseLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
 export type FreeResponseSourceRef = { document_id: number; page: number }
@@ -14,7 +15,7 @@ export type ExpectedPoint = {
   id: string
   text: string
   essential: boolean
-  sources: FreeResponseSourceRef[]
+  sources: (FreeResponseSourceRef | ImageEvidence)[]
 }
 export type FreeResponseExercise = {
   goal: FreeResponseGoal
@@ -41,10 +42,21 @@ export type TextEvidence = {
   source: FreeResponseSourceRef
   quote: string
 }
+export type ImageEvidence = { kind: "image"; asset_id: string; sha256: string }
+export type PictureDescriptionExercise = Omit<
+  FreeResponseExercise,
+  "source_fragments" | "expected_points"
+> & {
+  source: ImageEvidence
+  expected_points: ExpectedPoint[]
+}
+export type PictureDraftSetup = PublicFreeResponseExercise & {
+  preparation_state: "needs_criteria"
+}
 export type PointCheck = {
   point_id: string
   met: boolean
-  evidence: TextEvidence[]
+  evidence: (TextEvidence | ImageEvidence)[]
 }
 export type Correction = {
   original: string
@@ -90,6 +102,8 @@ export type GapExercise = {
 }
 export type FullExercise =
   | FreeResponseExercise
+  | PictureDescriptionExercise
+  | PictureDraftSetup
   | { accepted_answers: string[]; case_sensitive: boolean }
   | GapExercise
   | { pairs: { left: string; right: string }[] }
@@ -172,6 +186,7 @@ export type Source = {
 }
 export type ImageSlot = "question" | "answer"
 export type QuestionImage = {
+  image_role?: "source" | "illustration"
   asset_id: string
   url: string
   alt: string

@@ -86,7 +86,13 @@ export default function EditQuestion({
           <DialogHeader>
             <DialogTitle>{t("Проверим карточку")}</DialogTitle>
             <DialogDescription>
-              {t("Можно уточнить вопрос, ответ и варианты перед занятием.")}
+              {t(
+                ["free_response", "picture_description"].includes(
+                  card.question_type || ""
+                )
+                  ? "Можно уточнить вопрос, образец и критерии перед занятием."
+                  : "Можно уточнить вопрос, ответ и варианты перед занятием."
+              )}
             </DialogDescription>
           </DialogHeader>
           <form

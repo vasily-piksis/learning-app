@@ -31,6 +31,8 @@ def evaluator(tmp_path, handler):
 
 def assert_closed(schema):
     if isinstance(schema, dict):
+        assert "oneOf" not in schema
+        assert "discriminator" not in schema
         if schema.get("type") == "object":
             assert schema["additionalProperties"] is False
             assert set(schema["required"]) == set(schema["properties"])

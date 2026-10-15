@@ -76,6 +76,7 @@ export default function PracticeSelector({
                 "flashcard",
                 ...questionTypes,
                 "free_response",
+                "picture_description",
                 "mixed",
               ] as PracticeMethod[]
             ).map((type) => (
@@ -90,7 +91,11 @@ export default function PracticeSelector({
       {method === "mixed" && (
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-sm">{t("Типы вопросов")}</legend>
-          {[...questionTypes, "free_response" as const].map((kind) => (
+          {[
+            ...questionTypes,
+            "free_response" as const,
+            "picture_description" as const,
+          ].map((kind) => (
             <label className="flex items-center gap-3" key={kind}>
               <Checkbox
                 checked={selectedTypes.includes(kind)}

@@ -33,17 +33,21 @@ export default function FreeResponseSettings({
   value,
   onChange,
   disabled = false,
+  picture = false,
 }: {
   value: PublicFreeResponseExercise
   onChange: (value: PublicFreeResponseExercise) => void
   disabled?: boolean
+  picture?: boolean
 }) {
   const id = useId()
   return (
     <FieldGroup>
       <Field>
         <FieldLabel htmlFor={`${id}-language`}>
-          {t("Код исходного языка")}
+          {t(
+            picture ? "Язык описания (pl, en, ru, lt)" : "Код исходного языка"
+          )}
         </FieldLabel>
         <Input
           id={`${id}-language`}
@@ -54,7 +58,9 @@ export default function FreeResponseSettings({
         />
         <FieldDescription>
           {t(
-            "Подтверди язык материалов. Задание и исправления сохранят этот язык."
+            picture
+              ? "Выбери язык описания явно; язык интерфейса независим."
+              : "Подтверди язык материалов. Задание и исправления сохранят этот язык."
           )}
         </FieldDescription>
       </Field>

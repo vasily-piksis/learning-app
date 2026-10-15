@@ -18,6 +18,7 @@ from .image_generation import router as image_generation_router
 from .jobs import recover_jobs, worker_loop
 from .jobs import router as jobs_router
 from .library import router as library_router
+from .picture_responses import router as picture_responses_router
 from .question_images import router as question_images_router
 from .regeneration import router as regeneration_router
 from .study import router as study_router
@@ -103,6 +104,7 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
     app.include_router(deletion_router)
     app.include_router(jobs_router)
     app.include_router(question_images_router)
+    app.include_router(picture_responses_router)
     app.include_router(image_generation_router)
     app.include_router(regeneration_router)
     app.include_router(study_router)

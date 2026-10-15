@@ -206,6 +206,9 @@ class CardImage(Base):
     asset_id: Mapped[str] = mapped_column(ForeignKey("image_assets.id"), index=True)
     slot: Mapped[str] = mapped_column(String(20))
     alt: Mapped[str] = mapped_column(String(500), default="")
+    image_role: Mapped[str] = mapped_column(
+        String(20), default="illustration", server_default="illustration"
+    )
 
 
 class SessionImage(Base):
@@ -218,6 +221,9 @@ class SessionImage(Base):
     asset_id: Mapped[str] = mapped_column(ForeignKey("image_assets.id"), index=True)
     slot: Mapped[str] = mapped_column(String(20))
     alt: Mapped[str] = mapped_column(String(500), default="")
+    image_role: Mapped[str] = mapped_column(
+        String(20), default="illustration", server_default="illustration"
+    )
 
 
 class JobImage(Base):
@@ -286,3 +292,13 @@ class EvaluationRequest(Base):
     model: Mapped[str] = mapped_column(String(200))
     usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class PictureDraftRequest(Base):
+    __tablename__ = "picture_draft_requests"
+    __table_args__ = (UniqueConstraint("user_id", "key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    key: Mapped[str] = mapped_column(String(80))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    card_id: Mapped[int] = mapped_column(Integer)

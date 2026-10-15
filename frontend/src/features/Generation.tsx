@@ -1,3 +1,4 @@
+import PictureDrafts from "./exercises/PictureDrafts"
 import FreeResponseSettings, {
   validFreeSettings,
 } from "./exercises/FreeResponseSettings"
@@ -145,12 +146,19 @@ export default function Generation({
         </Button>
       </div>
     )
+  if (initialMethod === "picture_description")
+    return <PictureDrafts topicId={id} />
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t("Создать вопросы")}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
+        <Button asChild variant="outline">
+          <a href={`#library/topic/${id}/create/picture_description`}>
+            {t("Описание картинки")}
+          </a>
+        </Button>
         <ErrorNotice
           message={documents.error || error}
           retry={documents.refetch}

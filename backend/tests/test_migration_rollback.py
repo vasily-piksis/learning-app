@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_DOCKER_QA") != "1",
     reason="Set RUN_DOCKER_QA=1 with locally built QA images",
 )
-BEFORE = "learning-qa-before:20261014"
+BEFORE = os.environ.get("DOCKER_QA_BEFORE", "learning-qa-before:20261014")
 AFTER = os.environ.get("DOCKER_QA_AFTER", "learning-qa-after:free-response-task4")
 HEAD = ScriptDirectory(str(SOURCE / "backend/alembic")).get_current_head()
 
@@ -55,6 +55,7 @@ from PIL import Image
 from app.config import Settings
 from app.db import Database
 from app.models import ImageAsset,SessionImage,StudySession,SessionCard
+import hashlib
 from app.quiz import build_free_snapshot
 settings=Settings(_env_file=None,data_dir=Path('/data'))
 db=Database(settings)
@@ -72,6 +73,16 @@ with db.session() as session:
  session.add(SessionCard(id=2,session_id=2,position=0,snapshot=snapshot));session.flush()
  session.add(ImageAsset(id='a'*32,filename='qa.png',owner_user_id=1,stage='ready',width=8,height=8,mime='image/png'));session.flush()
  session.add(SessionImage(session_card_id=2,asset_id='a'*32,slot='answer',alt='Ąžuolas'))
+ Path('/data/question-images').mkdir(exist_ok=True)
+ Image.new('RGB',(8,8),(20,100,40)).save('/data/question-images/picture.webp')
+ raw=Path('/data/question-images/picture.webp').read_bytes()
+ source={'kind':'image','asset_id':'b'*32,'sha256':hashlib.sha256(raw).hexdigest()}
+ visual={'goal':'language','language':'pl','level':'A1','min_words':None,'max_words':None,'model_answer':'Zielone pole.',
+ 'rubric':[{'id':'task','label':'Opis','weight':100}], 'expected_points':[{'id':'green','text':'Zielone pole','essential':True,'sources':[source]}],'source':source}
+ session.add(StudySession(id=3,user_id=1,topic_ids=[1],mode='quiz',position=0,status='active'));session.flush()
+ session.add(SessionCard(id=3,session_id=3,position=0,snapshot={'id':3,'snapshot_version':4,'question':'Opisz obrazek.','question_type':'picture_description','mode':'quiz','language':'pl','exercise':visual,'answer':'Zielone pole.','sources':[]}));session.flush()
+ session.add(ImageAsset(id='b'*32,filename='picture.webp',owner_user_id=1,stage='ready',width=8,height=8,sha256=source['sha256'],size=len(raw)));session.flush()
+ session.add(SessionImage(session_card_id=3,asset_id='b'*32,slot='question',alt='',image_role='source'))
 db.engine.dispose()
 """
 
@@ -195,7 +206,13 @@ def test_real_docker_migration_preserves_old_rows_json_private_files_and_env(qa)
     module.run(["docker", "compose", "stop", "app"])
     command_image(AFTER, volume, CURRENT_CONTENT)
     current = json.loads(command_image(AFTER, volume, READ))
-    assert len(current["tables"]["session_images"]["rows"]) == 1
+    assert len(current["tables"]["session_images"]["rows"]) == 2
+    roles = current["tables"]["session_images"]
+    assert {row[roles["columns"].index("image_role")] for row in roles["rows"]} == {
+        "illustration",
+        "source",
+    }
+    assert "question-images/picture.webp" in current["files"]
     assert "images/qa.png" in current["files"]
     archive = module.cold_backup(module.private_backups(), os.environ.copy())
     command_image(
@@ -259,3 +276,59 @@ def downgrade():raise RuntimeError('Restore backup')
         assert (root / "backups/failed-update.json").stat().st_mode & 0o777 == 0o600
     finally:
         docker("image", "rm", bad_image)
+
+
+@pytest.mark.parametrize("enabled", ["true", "false"])
+def test_actual_compose_flags_reach_runtime_settings(tmp_path, enabled):
+    environment = tmp_path / "sentinels.env"
+    environment.write_text(
+        f"FREE_RESPONSE_ENABLED={enabled}\nPICTURE_DESCRIPTION_ENABLED={enabled}\nOPENAI_VISION_ENABLED={enabled}\nIMAGE_GENERATION_ENABLED=false\nOPENAI_IMAGE_MODEL=\nOPENAI_API_KEY=\nFREE_RESPONSE_DAILY_REQUEST_LIMIT=37\nIMAGE_DAILY_REQUEST_LIMIT=13\nBUDGET_TIMEZONE=UTC\nIMAGE_BUDGET_TIMEZONE=Europe/Warsaw\n"
+    )
+    configuration = json.loads(
+        docker(
+            "compose",
+            "--env-file",
+            str(environment),
+            "-f",
+            str(SOURCE / "compose.yaml"),
+            "config",
+            "--format",
+            "json",
+        )
+    )
+    config = configuration["services"]["app"]["environment"]
+    names = [
+        "FREE_RESPONSE_ENABLED",
+        "PICTURE_DESCRIPTION_ENABLED",
+        "OPENAI_VISION_ENABLED",
+        "IMAGE_GENERATION_ENABLED",
+        "OPENAI_IMAGE_MODEL",
+        "FREE_RESPONSE_DAILY_REQUEST_LIMIT",
+        "IMAGE_DAILY_REQUEST_LIMIT",
+        "BUDGET_TIMEZONE",
+        "IMAGE_BUDGET_TIMEZONE",
+    ]
+    args = [part for name in names for part in ("-e", f"{name}={config[name]}")]
+    actual = json.loads(
+        docker(
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            *args,
+            "--entrypoint",
+            "python",
+            AFTER,
+            "-c",
+            "import json; from app.config import Settings; s=Settings(_env_file=None); print(json.dumps({k:getattr(s,k.lower()) for k in "
+            + repr(names)
+            + "}))",
+        )
+    )
+    assert actual["PICTURE_DESCRIPTION_ENABLED"] == (enabled == "true")
+    assert actual["FREE_RESPONSE_ENABLED"] == (enabled == "true")
+    assert actual["OPENAI_VISION_ENABLED"] == (enabled == "true")
+    assert actual["IMAGE_GENERATION_ENABLED"] is False and actual["OPENAI_IMAGE_MODEL"] == ""
+    assert actual["FREE_RESPONSE_DAILY_REQUEST_LIMIT"] == 37
+    assert actual["IMAGE_DAILY_REQUEST_LIMIT"] == 13
+    assert actual["BUDGET_TIMEZONE"] == "UTC" and actual["IMAGE_BUDGET_TIMEZONE"] == "Europe/Warsaw"

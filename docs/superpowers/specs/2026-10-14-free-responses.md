@@ -30,7 +30,7 @@ Upload-only выпуск прежнего image-плана остаётся са
 
 Для новых типов используется прежний сценарий Prepare → Drafts → Save → Start.
 Вопрос и критерии подготавливаются заранее, старт не вызывает модель.
-GenerateBody принимает новый тип и `free_response_settings`; один запрос
+GenerateBody принимает текстовый `free_response` и `free_response_settings`; `picture_description` использует отдельные picture-drafts → prepare-picture с привязкой исходной картинки (generic /generate возвращает 422); один запрос
 готовит только семейство свободных заданий, смешивать его с прежними шестью
 типами в одном GenerateBody нельзя (422). Count остаётся 1–30 на одну тему.
 Идемпотентность, дедупликация, варианты регенерации и version guards сохраняются.

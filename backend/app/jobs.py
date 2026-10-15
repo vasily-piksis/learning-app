@@ -141,6 +141,7 @@ def recover_jobs(database):
                 document = db.get(Document, job.payload["document_id"])
                 if document:
                     document.status = "failed"
+    cleanup_image_assets(database)
 
 
 def check_refs(refs, sources):
@@ -336,8 +337,28 @@ def run_job(database, ai, identifier):
                 "applied_card_ids": [],
             }
         elif kind == "explain":
-            explanation = ai.explain(payload["snapshot"], payload["question"], payload["history"])
-            check_refs(explanation.sources, payload["snapshot"]["sources"])
+            if payload["snapshot"].get("question_type") == "picture_description":
+                from .picture_responses import explain_picture, get_picture_evidence
+
+                with database.session() as db:
+                    evidence = get_picture_evidence(db, payload["session_card_id"], user_id)
+
+                def before_explanation():
+                    from .evaluations import require_available
+
+                    require_available(database.settings, "picture_description")
+                    with database.session() as db:
+                        if db.get(Job, identifier).status != "running":
+                            raise ValueError("Объяснение отменено")
+                        get_picture_evidence(db, payload["session_card_id"], user_id)
+
+                explanation = explain_picture(ai, payload, evidence, before_explanation)
+            else:
+                explanation = ai.explain(
+                    payload["snapshot"], payload["question"], payload["history"]
+                )
+            if payload["snapshot"].get("question_type") != "picture_description":
+                check_refs(explanation.sources, payload["snapshot"]["sources"])
             if not explanation.text.strip():
                 raise ValueError("Модель вернула пустое объяснение")
             explanation_data = explanation.model_dump()
@@ -434,6 +455,10 @@ def run_job(database, ai, identifier):
                 db.get(Document, payload["document_id"]).status = "failed"
 
     finally:
+        if kind in {"regenerate", "explain"}:
+            from .question_images import cleanup_image_assets
+
+            cleanup_image_assets(database)
         # Caption-cache writes can finish after deletion cancelled an in-flight download.
         # Check outside the job transaction before cleaning any unreferenced transcript.
         if kind == "youtube":
@@ -538,6 +563,19 @@ def retry(identifier: int, request: Request):
                 validate_preparation(db, value.payload)
             except ValueError as error:
                 raise HTTPException(409, str(error)) from error
+        if value.payload.get("picture_source"):
+            from .question_images import bind_context
+
+            bind_context(db, value.id, value.payload["picture_source"]["asset_id"])
+        elif (
+            value.kind == "explain"
+            and value.payload.get("snapshot", {}).get("question_type") == "picture_description"
+        ):
+            from .picture_responses import get_picture_evidence
+            from .question_images import bind_context
+
+            evidence = get_picture_evidence(db, value.payload["session_card_id"], user.id)
+            bind_context(db, value.id, evidence.asset_id)
         value.status, value.error = "queued", None
         if value.kind in {"ingest", "youtube"}:
             db.get(Document, value.payload["document_id"]).status = "queued"
@@ -728,6 +766,15 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
         if card.version != body.version:
             raise HTTPException(409, "Карточка изменена в другой вкладке. Обновите список")
         original = card_data(db, card)
+        if card.question_type == "picture_description":
+            from .picture_responses import edit_picture
+
+            result = edit_picture(db, card, body, request)
+            db.commit()
+            from .question_images import cleanup_image_assets
+
+            cleanup_image_assets(request.app.state.db)
+            return result
         supplied = body.model_dump(exclude={"version", "image_updates"}, exclude_unset=True)
         exercise = supplied.get("exercise", original["exercise"])
         if card.question_type == "free_response" and isinstance(exercise, dict):
@@ -801,6 +848,15 @@ def save_cards(body: SaveCards, request: Request):
         if len(cards) != len(set(body.card_ids)):
             raise HTTPException(404, "Карточка не найдена")
         for card in cards:
+            if card.question_type == "picture_description":
+                from .picture_responses import validate_picture_card
+
+                try:
+                    validate_picture_card(db, card)
+                except (ValueError, OSError):
+                    raise HTTPException(
+                        409, "Сначала подготовьте критерии по исходной картинке"
+                    ) from None
             card.status = "saved"
         return {"saved": len(cards)}
 

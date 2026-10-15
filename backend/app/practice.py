@@ -10,12 +10,18 @@ from .models import Card, Document, Job, SourcePage
 from .quiz import quiz_ready
 
 
-def ready_for_quiz(card):
+def ready_for_quiz(card, db=None):
     if card.question_type == "choice":
         return quiz_ready(card)
     try:
+        if card.question_type == "picture_description":
+            if db is None:
+                return False
+            from .picture_responses import validate_picture_card
+
+            return bool(validate_picture_card(db, card))
         return bool(validate_exercise(card.question_type, card.exercise) and card.answer.strip())
-    except ValueError:
+    except (ValueError, OSError):
         return False
 
 
@@ -62,16 +68,16 @@ def practice_availability(db, topic_id, user_id=None, settings=None):
     )
     has_materials = any(value.strip() for value in source_texts)
     result = {}
-    for method in ("flashcard", *QUESTION_TYPES, "free_response"):
+    for method in ("flashcard", *QUESTION_TYPES, "free_response", "picture_description"):
         relevant = (
-            [c for c in cards if c.question_type != "free_response"]
+            [c for c in cards if c.question_type not in {"free_response", "picture_description"}]
             if method == "flashcard"
             else [c for c in cards if c.question_type == method]
         )
         result[method] = {
             "ready_count": sum(
                 c.status == "saved"
-                and (bool(c.answer.strip()) if method == "flashcard" else ready_for_quiz(c))
+                and (bool(c.answer.strip()) if method == "flashcard" else ready_for_quiz(c, db))
                 for c in relevant
             ),
             "draft_count": sum(c.status == "draft" for c in relevant),
@@ -88,8 +94,48 @@ def practice_availability(db, topic_id, user_id=None, settings=None):
     result["free_response"]["runtime_unavailable"] = settings is None or not runtime_available(
         settings
     )
+    result["picture_description"]["runtime_unavailable"] = (
+        settings is None or not runtime_available(settings, "picture_description")
+    )
+    from .models import CardImage, ImageAsset
+
+    result["picture_description"]["has_ready_materials"] = bool(
+        db.scalar(
+            select(CardImage.id)
+            .join(Card)
+            .join(ImageAsset, ImageAsset.id == CardImage.asset_id)
+            .where(
+                Card.topic_id == topic_id,
+                Card.status != "deleted",
+                CardImage.image_role == "source",
+                ImageAsset.stage == "ready",
+            )
+        )
+    )
     if user_id is None:
         return result
+    for job in db.scalars(
+        select(Job)
+        .where(Job.user_id == user_id, Job.kind == "regenerate", Job.status != "deleted")
+        .order_by(Job.id.desc())
+    ):
+        if not job.payload.get("picture_source") or topic_id not in job.payload.get(
+            "topic_ids", []
+        ):
+            continue
+        current_card = db.get(Card, job.payload.get("card_id"))
+        if (
+            not current_card
+            or current_card.status == "deleted"
+            or current_card.version != job.payload.get("base_version")
+        ):
+            continue
+        if job.status in {"queued", "running", "failed"} or (
+            job.status == "succeeded" and (job.result or {}).get("candidate")
+        ):
+            result["picture_description"]["preparation_job_id"] = job.id
+            result["picture_description"]["preparation_status"] = job.status
+            break
     current = material_fingerprint(db, topic_id)
     seen_outcomes = set()
     for job in db.scalars(

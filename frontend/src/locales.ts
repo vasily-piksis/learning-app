@@ -4,6 +4,41 @@ export const translations: Record<string, { pl: string; en: string }> = {
     pl: "Zadanie jeszcze niewykonane",
     en: "Assignment not completed yet",
   },
+  "Картинка — источник задания. Замена или удаление потребует новых критериев.":
+    {
+      pl: "Obraz jest źródłem zadania. Zmiana lub usunięcie wymaga nowych kryteriów.",
+      en: "The picture is the assignment source. Replacing or removing it requires new criteria.",
+    },
+  "Описание картинки": { pl: "Opis obrazka", en: "Picture description" },
+  "Язык описания (pl, en, ru, lt)": {
+    pl: "Język opisu (pl, en, ru, lt)",
+    en: "Description language (pl, en, ru, lt)",
+  },
+  "Выбери язык описания явно; язык интерфейса независим.": {
+    pl: "Wybierz język opisu; język interfejsu jest niezależny.",
+    en: "Choose the description language; interface language is independent.",
+  },
+  "Исходная картинка": { pl: "Obraz źródłowy", en: "Source picture" },
+  "Создать черновик без ИИ": {
+    pl: "Utwórz szkic bez AI",
+    en: "Create draft without AI",
+  },
+  "Подготовить критерии (платно)": {
+    pl: "Przygotuj kryteria (płatne)",
+    en: "Prepare criteria (paid)",
+  },
+  "Подготовка и проверка описания используют платную модель с изображением.": {
+    pl: "Przygotowanie i ocena opisu używają płatnego modelu z obrazem.",
+    en: "Preparing and grading the description use a paid model with the picture.",
+  },
+  "Сначала подготовь и примени критерии по картинке.": {
+    pl: "Najpierw przygotuj i zastosuj kryteria na podstawie obrazu.",
+    en: "First prepare and apply criteria based on the picture.",
+  },
+  "Можно уточнить вопрос, образец и критерии перед занятием.": {
+    pl: "Możesz edytować pytanie, przykład i kryteria przed sesją.",
+    en: "You can edit the question, example and criteria before studying.",
+  },
   "Свободный ответ": { pl: "Swobodna odpowiedź", en: "Free response" },
   "Код исходного языка": {
     pl: "Kod języka materiałów",

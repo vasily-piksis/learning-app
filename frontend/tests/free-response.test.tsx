@@ -518,3 +518,50 @@ test("completed feedback preserves valid optional legacy sources and private ima
     })
   ).toBe(true)
 })
+
+test("picture feedback accepts typed image evidence and rejects private URL substitutes", async () => {
+  const { isEvaluationFeedback } =
+    await import("../src/features/exercises/FreeResponse")
+  const source = {
+    kind: "image",
+    asset_id: "a".repeat(32),
+    sha256: "b".repeat(64),
+  }
+  const picture = {
+    ...feedback,
+    card: {
+      ...card,
+      question_type: "picture_description",
+      exercise: { ...exercise, source },
+    },
+    point_checks: [{ point_id: "p", met: true, evidence: [source] }],
+  }
+  expect(isEvaluationFeedback(picture)).toBe(true)
+  expect(
+    isEvaluationFeedback({
+      ...picture,
+      point_checks: [
+        {
+          point_id: "p",
+          met: true,
+          evidence: [{ ...source, asset_id: "/api/cards/1/images/question" }],
+        },
+      ],
+    })
+  ).toBe(false)
+})
+
+test("picture creation needs an explicitly chosen language and CEFR even without documents", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify([])))
+  )
+  render(<Generation initialTopics={[1]} initialMethod="picture_description" />)
+  await screen.findByText("Picture description")
+  expect(
+    screen.getByRole("button", { name: "Create draft without AI" })
+  ).toBeDisabled()
+  expect(
+    screen.getByLabelText("Description language (pl, en, ru, lt)")
+  ).toHaveValue("")
+})

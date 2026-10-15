@@ -102,12 +102,20 @@ export default function RegenerateQuestion({
     <>
       <Button
         variant="ghost"
-        aria-label={t("Перегенерировать вопрос")}
+        aria-label={t(
+          card.question_type === "picture_description"
+            ? "Подготовить критерии (платно)"
+            : "Перегенерировать вопрос"
+        )}
         onClick={() => void start()}
         disabled={busy || imageBusy}
       >
         <RefreshCw data-icon="inline-start" />
-        {t("Перегенерировать")}
+        {t(
+          card.question_type === "picture_description"
+            ? "Подготовить критерии (платно)"
+            : "Перегенерировать"
+        )}
       </Button>
       <Dialog
         open={open}
@@ -179,13 +187,15 @@ export default function RegenerateQuestion({
               <p className="text-sm text-muted-foreground">
                 {t("Правки кандидата сохраняются при применении.")}
               </p>
-              <QuestionImages
-                card={card}
-                value={imageUpdates}
-                onChange={setImageUpdates}
-                disabled={busy || locked || imageBusy}
-                onBusyChange={setImageBusy}
-              />
+              {card.question_type !== "picture_description" && (
+                <QuestionImages
+                  card={card}
+                  value={imageUpdates}
+                  onChange={setImageUpdates}
+                  disabled={busy || locked || imageBusy}
+                  onBusyChange={setImageBusy}
+                />
+              )}
               <EditQuestion
                 card={preview}
                 showImages={false}

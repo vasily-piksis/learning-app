@@ -17,6 +17,8 @@ from .free_responses import (
     FreeResponseExercise,
     Goal,
     Level,
+    PictureDescriptionExercise,
+    PictureDraftSetup,
     RubricCriterion,
     SourceFragment,
     WordBound,
@@ -29,6 +31,7 @@ Exercise = (
     | MatchingExercise
     | OrderingExercise
     | FreeResponseExercise
+    | PictureDescriptionExercise
 )
 
 
@@ -140,7 +143,9 @@ class GeneratedCard(Strict):
                 or self.correct_index is not None
             ):
                 raise ValueError("Для этого задания нужен quiz без вариантов ответа")
-            if not self.question.strip() or not self.sources:
+            if not self.question.strip() or (
+                not self.sources and self.question_type != "picture_description"
+            ):
                 raise ValueError("Карточке нужны вопрос и источники")
             return self
         validate_exercise("choice", self.exercise)
@@ -299,6 +304,8 @@ class GenerateBody(Strict):
 
     @model_validator(mode="after")
     def distinct_topics(self):
+        if "picture_description" in self.question_types:
+            raise ValueError("Для описания картинки используйте picture-drafts и prepare-picture")
         if "free_response" in self.question_types:
             if (
                 self.question_types != ["free_response"]
@@ -337,7 +344,7 @@ class CardEdit(Strict):
     question: str = Field(min_length=1, max_length=10000)
     answer: str | None = Field(default=None, min_length=1, max_length=10000)
     options: list[str] = Field(default_factory=list)
-    exercise: Exercise | FreeResponseEdit | None = None
+    exercise: Exercise | FreeResponseEdit | PictureDraftSetup | None = None
     correct_index: StrictInt | None = None
     correct_indices: list[StrictInt] | None = None
     version: int

@@ -18,6 +18,38 @@ _data = TemporaryDirectory(prefix="learning-browser-")
 
 
 class BrowserAI(FixtureAI):
+    def parse(self, schema, messages, tokens, **kwargs):
+        from app.free_responses import PictureDescriptionExercise
+
+        assert schema is PictureDescriptionExercise
+        if kwargs.get("before_request"):
+            kwargs["before_request"]()
+        assert messages[1]["content"][1]["image_url"].startswith("data:image/webp;base64,")
+        data = json.loads(messages[1]["content"][0]["text"])
+        setup = {k: v for k, v in data["settings"].items() if k != "preparation_state"}
+        examples = {
+            "pl": "Na obrazku jest zielone pole.",
+            "en": "There is a green field in the picture.",
+            "ru": "На картинке зелёное поле.",
+            "lt": "Paveikslėlyje yra žalias laukas.",
+        }
+        return schema.model_validate(
+            {
+                **setup,
+                "model_answer": examples[setup["language"]],
+                "source": data["source"],
+                "rubric": [{"id": "task", "label": "Opis / Description", "weight": 100}],
+                "expected_points": [
+                    {
+                        "id": "green",
+                        "text": examples[setup["language"]],
+                        "essential": True,
+                        "sources": [data["source"]],
+                    }
+                ],
+            }
+        )
+
     def generate(
         self,
         topic_id,
@@ -219,7 +251,13 @@ class BrowserEvaluationAI:
     def __init__(self, settings):
         pass
 
-    def evaluate(self, snapshot, answer, before_request):
+    def evaluate(self, snapshot, answer, before_request, evidence=None):
+        if snapshot["question_type"] == "picture_description":
+            assert (
+                evidence
+                and evidence.data
+                and evidence.sha256 == snapshot["exercise"]["source"]["sha256"]
+            )
         import time
 
         from app.ai import TransientError
@@ -260,6 +298,8 @@ def browser_app():
         cookie_secure=False,
         openai_api_key="browser-fixture-only",
         free_response_enabled=True,
+        picture_description_enabled=True,
+        openai_vision_enabled=True,
         image_generation_enabled=True,
         openai_image_model="browser-image-fixture",
         image_daily_request_limit=100,
@@ -269,7 +309,9 @@ def browser_app():
     evaluations.EvaluationAI = BrowserEvaluationAI
     downsub.request = subtitle_boundary
     image_generation.ImageGenerator = BrowserImageGenerator
-    instance = create_app(settings, ai=BrowserAI())
+    fixture_ai = BrowserAI()
+    fixture_ai.settings = settings
+    instance = create_app(settings, ai=fixture_ai)
     create_user(instance.state.db, "child", "Browser Child", "browser-child-password")
     create_user(instance.state.db, "parent", "Browser Parent", "browser-parent-password")
     for device in ("desktop", "mobile"):

@@ -58,10 +58,16 @@ export default function StartStudy({
   const rows = counts.flatMap((topic) =>
     requested.map((kind) => ({ topic, kind, ...readiness(topic, kind) }))
   )
-  const paid = requested.includes("free_response")
+  const paid = requested.some((kind) =>
+    ["free_response", "picture_description"].includes(kind)
+  )
   const unavailable =
     paid &&
-    rows.some((row) => row.kind === "free_response" && row.runtime_unavailable)
+    rows.some(
+      (row) =>
+        ["free_response", "picture_description"].includes(row.kind) &&
+        row.runtime_unavailable
+    )
   const missing = rows.filter((row) => !row.ready_count)
   const actionable = missing[0]
   const ready =
@@ -83,15 +89,23 @@ export default function StartStudy({
           ...(paid ? { include_ai_evaluated: paidOptIn } : {}),
         })
         navigate(`study/${session.id}`)
-      } else if (pending?.preparation_job_id)
+      } else if (
+        pending?.preparation_job_id &&
+        pending.kind === "picture_description"
+      )
+        navigate(`library/topic/${pending.topic.id}/create/picture_description`)
+      else if (pending?.preparation_job_id)
         await openJob(pending.preparation_job_id)
-      else if (drafts) navigate(`library/topic/${drafts.topic.id}/questions`)
+      else if (drafts)
+        navigate(
+          `library/topic/${drafts.topic.id}/${drafts.kind === "picture_description" ? "create/picture_description" : "questions"}`
+        )
       else if (actionable) {
         if (actionable.kind === "choice" && actionable.needs_options_count > 0)
           setPreparing(true)
         else
           navigate(
-            `library/topic/${actionable.topic.id}/${actionable.has_ready_materials ? `create/${actionable.kind}` : "materials"}`
+            `library/topic/${actionable.topic.id}/${actionable.kind === "picture_description" || actionable.has_ready_materials ? `create/${actionable.kind}` : "materials"}`
           )
       }
     } catch (e) {

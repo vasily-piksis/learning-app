@@ -114,6 +114,15 @@ export default function Questions({
                 {card.target_language && (
                   <Badge variant="outline">{t("Перевод")}</Badge>
                 )}
+                {card.status === "draft" &&
+                  card.question_type === "picture_description" && (
+                    <a
+                      className="text-sm underline"
+                      href={`${root}/create/picture_description`}
+                    >
+                      {t("Проверить и сохранить")}
+                    </a>
+                  )}
                 {card.status === "draft" && card.job_id && (
                   <a
                     className="text-sm underline"

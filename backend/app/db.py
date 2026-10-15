@@ -33,6 +33,7 @@ class Database:
     @contextmanager
     def session(self):
         with self.factory() as session:
+            session.info["database"] = self
             try:
                 yield session
                 session.commit()

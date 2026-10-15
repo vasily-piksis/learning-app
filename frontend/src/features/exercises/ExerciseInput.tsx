@@ -58,7 +58,10 @@ export default function ExerciseInput(props: InputProps) {
   }
   const kind = props.card.question_type
   const Component =
-    kind && kind !== "choice" && kind !== "free_response"
+    kind &&
+    kind !== "choice" &&
+    kind !== "free_response" &&
+    kind !== "picture_description"
       ? renderers[kind]
       : null
   return (

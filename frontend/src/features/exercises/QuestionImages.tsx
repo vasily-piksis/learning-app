@@ -28,7 +28,7 @@ export function QuestionImageView({ image }: { image?: QuestionImage }) {
     <figure className="flex min-w-0 flex-col gap-2">
       <img
         src={image.url}
-        alt={image.alt}
+        alt={image.image_role === "source" ? t("Исходная картинка") : image.alt}
         width={image.width}
         height={image.height}
         className="max-h-80 max-w-full self-start rounded-md object-contain"
@@ -430,7 +430,9 @@ export default function QuestionImages({
     <FieldGroup>
       <p className="text-sm text-muted-foreground">
         {t(
-          "Картинки — только иллюстрации. Вопрос и правильный ответ должны быть понятны без картинки. Проверь соответствие картинки тексту самостоятельно."
+          card.question_type === "picture_description"
+            ? "Картинка — источник задания. Замена или удаление потребует новых критериев."
+            : "Картинки — только иллюстрации. Вопрос и правильный ответ должны быть понятны без картинки. Проверь соответствие картинки тексту самостоятельно."
         )}
       </p>
       <p className="text-sm text-muted-foreground">
@@ -440,7 +442,9 @@ export default function QuestionImages({
       </p>
       <p className="text-sm text-muted-foreground">
         {t(
-          "Родитель или пользователь проверяет соответствие ИИ-иллюстрации перед сохранением. Это не источник фактов."
+          card.question_type === "picture_description"
+            ? "Картинка — источник задания. Замена или удаление потребует новых критериев."
+            : "Родитель или пользователь проверяет соответствие ИИ-иллюстрации перед сохранением. Это не источник фактов."
         )}
       </p>
       <p className="text-sm text-muted-foreground">
@@ -618,7 +622,11 @@ export default function QuestionImages({
                   id={`${id}-${slot}-alt`}
                   value={displayed?.alt || ""}
                   maxLength={500}
-                  disabled={blocked}
+                  disabled={
+                    blocked ||
+                    (card.question_type === "picture_description" &&
+                      slot === "question")
+                  }
                   onChange={(event) =>
                     onChange({
                       ...value,

@@ -89,7 +89,9 @@ export default function Study({ id }: { id: number }) {
             : t("Попробуй вспомнить ответ, прежде чем открыть карточку.")
         }
       />
-      {value.card?.question_type === "free_response" ? (
+      {["free_response", "picture_description"].includes(
+        value.card?.question_type || ""
+      ) ? (
         <FreeResponse
           key={value.position}
           session={value}

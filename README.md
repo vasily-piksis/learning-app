@@ -295,7 +295,7 @@ usage-метаданные, без prompt, изображений и секре�
 завершения этапов свободных ответов и аудио. Перед этим финальный Free Task7 должен
 повторно выполнить настоящую Docker QA-проверку миграции/отката на отдельных томах
 после сборки актуального образа. Фикстура `test_migration_rollback.py` определяет
-текущий head через Alembic (сейчас `0009`) и добавляет уникальную тестовую миграцию
+текущий head через Alembic (сейчас `0010`) и добавляет уникальную тестовую миграцию
 `qa_failure` после него. Прохождение обычного check с пропущенными Docker-тестами
 не заменяет эту проверку. Рабочие `.env`, Traefik и семейный volume при подготовке
 не меняются; платная генерация остаётся выключенной до отдельного решения оператора.
@@ -324,8 +324,33 @@ failed evaluation never becomes a wrong answer. History repeats frozen assignmen
 Saved readiness remains visible even when grading is unavailable.
 
 Free-response evaluation defaults off (`FREE_RESPONSE_ENABLED=false`). Written
-release QA uses only disposable configuration and fake provider boundaries; no
-voice or picture-assignment feature is enabled by this UI. Run opt-in isolated
+release QA uses only disposable configuration and fake provider boundaries. Voice
+input remains outside this stage; picture descriptions use the separate flow below. Run opt-in isolated
 migration/restore tests with `RUN_DOCKER_QA=1 .venv/bin/pytest -q
 backend/tests/test_migration_rollback.py`; build `learning-qa-after:free-response-task4`
 first, or provide `DOCKER_QA_AFTER`. These tests never use production volumes.
+
+### Picture descriptions
+
+Picture descriptions use **Create draft without AI → Prepare criteria (paid) → Apply → Save → Start**.
+Choose the assignment language explicitly (PL/EN/RU/LT), CEFR level and optional word limits;
+interface language stays independent. One uploaded JPEG/PNG/WebP is sufficient: no Document
+or generated illustration is required. The initial upload normalizes a private immutable source
+without a model request. Changing or removing the source returns the card to a draft and
+invalidates its criteria. Old sessions and repeats retain their original source and criteria.
+
+`PICTURE_DESCRIPTION_ENABLED=false` and `OPENAI_VISION_ENABLED=false` default off.
+The latter is an operator declaration that the configured `OPENAI_MODEL` supports image input,
+not proof of account access. Confirm the provider documentation and access before enabling;
+no paid capability probe is made. Preparation, grading and explanation send verified source
+bytes, never authenticated image URLs. Unsupported vision fails without a text-only fallback.
+The picture flag is independent of `FREE_RESPONSE_ENABLED` and of optional image generation:
+`IMAGE_GENERATION_ENABLED=false`, empty `OPENAI_IMAGE_MODEL` remain valid for uploaded sources.
+Compose explicitly forwards all these flags, shared evaluation quotas and timezone settings.
+Do not copy `.env` into an image. Existing explicit false values must be preserved at release.
+
+Migration `0010` adds source/illustration roles to image links (old rows remain illustrations)
+and an upload request ledger that prevents duplicate/deleted draft resurrection. Job context
+references protect images only while jobs are active. Use a full cold backup restore for rollback.
+Disposable current-head QA can select the prior image with `DOCKER_QA_BEFORE` and the rebuilt
+current image with `DOCKER_QA_AFTER`; sentinel Compose/runtime checks use no provider key.
