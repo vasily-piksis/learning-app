@@ -497,6 +497,10 @@ def retry_save(identifier: int, request: Request):
     database = request.app.state.db
     with database.session() as db:
         job = owned_job(db, identifier, require_user(request).id)
+        if job.status == "succeeded" and (
+            (job.result or {}).get("candidate") or (job.result or {}).get("applied_asset_id")
+        ):
+            return job_data(job, db)
         if job.status not in {"failed", "unknown"} or not (job.result or {}).get("can_retry_save"):
             raise HTTPException(409, "Нет картинки для локального сохранения")
     try:

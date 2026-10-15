@@ -340,6 +340,7 @@ class AI:
         )
 
     def prepare_quiz(self, snapshot):
+        snapshot = {key: value for key, value in snapshot.items() if key != "images"}
         return self.parse(
             QuizOptions,
             [

@@ -163,3 +163,58 @@ def test_failed_preparation_retry_rejects_obsolete_snapshot(client, app):
         db.get(Card, cards[0]["id"]).version += 1
     assert client.post(f"/api/jobs/{job['id']}/retry").status_code == 409
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "failed"
+
+
+def test_illustrated_legacy_choice_preparation_keeps_stored_and_sdk_inputs_text_only(
+    client, app, tmp_path
+):
+    import json
+
+    import httpx
+    from app.jobs import card_data
+    from test_question_images import save, upload
+    from test_retry import ai_client, completed
+
+    topic, cards = saved_cards(client, app, "flashcard", 1)
+    card = cards[0]
+    asset = upload(client, card).json()
+    saved = save(
+        client, card, {"question": {"asset_id": asset["id"], "alt": "private illustration marker"}}
+    )
+    assert saved.status_code == 200, saved.text
+    with app.state.db.session() as db:
+        illustrated = card_data(db, db.get(Card, card["id"]), include_text=True)
+    assert illustrated["images"]["question"]["alt"] == "private illustration marker"
+    captured = []
+
+    def handler(request):
+        captured.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json=completed(
+                {
+                    "card_id": card["id"],
+                    "options": [card["answer"], "Other"],
+                    "correct_indices": [0],
+                    "correct_index": None,
+                }
+            ),
+        )
+
+    ai, sdk = ai_client(tmp_path, handler)
+    with sdk:
+        # Defensive adapter boundary also covers persisted legacy jobs with images.
+        ai.prepare_quiz(illustrated)
+        job = prepare(client, topic)
+        run_job(app.state.db, ai, job["id"])
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "succeeded"
+    with app.state.db.session() as db:
+        payload = db.get(Job, job["id"]).payload
+        assert "images" not in payload["cards"][0]
+    assert len(captured) == 2
+    for wire in captured:
+        text = json.dumps(wire["input"])
+        assert "images" not in text
+        assert "private illustration marker" not in text
+        assert asset["id"] not in text
+        assert f"/api/cards/{card['id']}/images" not in text

@@ -6,6 +6,7 @@ import json
 import os
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -159,24 +160,30 @@ async def upload_draft(
         }
     )
     database, user = request.app.state.db, require_user(request)
-    path = None
-    try:
-        with database.session() as db:
-            db.execute(text("BEGIN IMMEDIATE"))
-            previous = db.scalar(
-                select(PictureDraftRequest).where(
-                    PictureDraftRequest.user_id == user.id, PictureDraftRequest.key == key
-                )
+    # Commit the request and nonservable source intent before any private bytes.
+    # A process exit leaves a writing asset that restart cleanup can account for.
+    with database.session() as db:
+        db.execute(text("BEGIN IMMEDIATE"))
+        previous = db.scalar(
+            select(PictureDraftRequest).where(
+                PictureDraftRequest.user_id == user.id, PictureDraftRequest.key == key
             )
-            if previous:
-                if previous.fingerprint != signature:
-                    raise HTTPException(
-                        409, "Идентификатор уже использован для другой картинки или настроек"
-                    )
-                card = db.get(Card, previous.card_id)
-                if not card or card.status == "deleted":
-                    raise HTTPException(410, "Черновик удалён")
+        )
+        if previous:
+            if previous.fingerprint != signature:
+                raise HTTPException(
+                    409, "Идентификатор уже использован для другой картинки или настроек"
+                )
+            card = db.get(Card, previous.card_id)
+            if not card or card.status == "deleted":
+                raise HTTPException(410, "Черновик удалён")
+            link = db.scalar(
+                select(CardImage).where(CardImage.card_id == card.id, CardImage.slot == "question")
+            )
+            asset = db.get(ImageAsset, link.asset_id) if link else None
+            if not asset or asset.stage == "ready":
                 return card_data(db, card)
+        else:
             topic = db.get(Topic, identifier)
             if not topic or topic.deleted:
                 raise HTTPException(404, "Тема удалена")
@@ -202,16 +209,13 @@ async def upload_draft(
                 height=height,
                 size=len(encoded),
                 owner_user_id=user.id,
-                stage="ready",
+                stage="writing",
+                target_card_id=card.id,
+                target_version=card.version,
+                slot="question",
             )
             db.add(asset)
             db.flush()
-            path = asset_path(database, asset)
-            with path.open("xb") as stream:
-                path.chmod(0o600)
-                stream.write(encoded)
-                stream.flush()
-                os.fsync(stream.fileno())
             db.add(
                 CardImage(
                     card_id=card.id, asset_id=identity, slot="question", image_role="source", alt=""
@@ -222,12 +226,54 @@ async def upload_draft(
                     user_id=user.id, key=key, fingerprint=signature, card_id=card.id
                 )
             )
+        card_id, identity = card.id, asset.id
+    try:
+        with database.session() as db:
+            db.execute(text("BEGIN IMMEDIATE"))
+            card = live_card(db, card_id)
+            asset = db.get(ImageAsset, identity)
+            link = db.scalar(
+                select(CardImage).where(CardImage.card_id == card.id, CardImage.slot == "question")
+            )
+            if not link or link.asset_id != identity:
+                raise HTTPException(409, "Источник картинки изменён")
+            if asset.stage == "ready":
+                return card_data(db, card)
+            if (
+                asset.stage not in {"writing", "draft", "discarded"}
+                or asset.target_card_id != card.id
+                or asset.target_version != card.version
+                or asset.owner_user_id != user.id
+            ):
+                raise HTTPException(409, "Черновик изменён")
+            path = asset_path(database, asset)
+            temporary = Path(str(path) + ".part")
+            with temporary.open("wb") as stream:
+                temporary.chmod(0o600)
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(path)
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            asset.sha256, asset.size, asset.width, asset.height = (
+                digest,
+                len(encoded),
+                width,
+                height,
+            )
+            asset.stage = "ready"
+            asset.target_card_id, asset.target_version, asset.slot = None, None, None
             db.flush()
             result = card_data(db, card)
         return result
     except Exception:
-        if path is not None:
-            path.unlink(missing_ok=True)
+        from .question_images import cleanup_image_assets
+
+        cleanup_image_assets(database, recover_writing=True, recover_ids={identity})
         raise
 
 
@@ -243,6 +289,10 @@ class PreparePicture(Strict):
 
 @router.post("/cards/{identifier}/prepare-picture")
 def prepare(identifier: int, body: PreparePicture, request: Request):
+    return prepare_picture(identifier, body, request)
+
+
+def prepare_picture(identifier, body, request, submitted_fingerprint=None):
     from .evaluations import require_available
     from .jobs import bind_request, card_data, fingerprint, job_data, request_replay
 
@@ -256,7 +306,7 @@ def prepare(identifier: int, body: PreparePicture, request: Request):
         raise HTTPException(422, "Выберите язык и уровень CEFR") from None
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
-        signature = fingerprint(
+        signature = submitted_fingerprint or fingerprint(
             {"card_id": identifier, **body.model_dump(exclude={"idempotency_key"})}
         )
         previous = request_replay(db, user.id, "regenerate", body.idempotency_key, signature)

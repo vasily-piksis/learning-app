@@ -151,7 +151,12 @@ def test_local_save_retry_never_sends_another_request(client, app, enabled, monk
     )
     monkeypatch.setattr(images, "finish_candidate", original)
     recover_jobs(app.state.db)
-    assert client.post(f"/api/jobs/{job['id']}/retry-image-save").json()["status"] == "succeeded"
+    completed = client.post(f"/api/jobs/{job['id']}/retry-image-save")
+    assert completed.json()["status"] == "succeeded"
+    # The successful acknowledgement was lost; the same free action is replayed.
+    replay = client.post(f"/api/jobs/{job['id']}/retry-image-save")
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == completed.json()
     assert len(enabled) == len(attempts(app)) == 1
 
 

@@ -159,14 +159,20 @@ def start(identifier: int, body: RegenerateBody, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
+        signature = fingerprint(
+            {"card_id": identifier, **body.model_dump(exclude={"idempotency_key"})}
+        )
+        replay = request_replay(db, user.id, "regenerate", body.idempotency_key, signature)
+        if replay is not None:
+            return job_data(replay, db)
         card = db.get(Card, identifier)
         if card and card.status != "deleted" and card.question_type == "picture_description":
-            from .picture_responses import PreparePicture, prepare, setup_of
+            from .picture_responses import PreparePicture, prepare_picture, setup_of
 
             setup = setup_of(card.exercise).model_dump(exclude={"goal", "preparation_state"})
             # Release the transaction before the picture route acquires its write lock.
             db.rollback()
-            return prepare(
+            return prepare_picture(
                 identifier,
                 PreparePicture(
                     version=body.version,
@@ -175,14 +181,8 @@ def start(identifier: int, body: RegenerateBody, request: Request):
                     **setup,
                 ),
                 request,
+                submitted_fingerprint=signature,
             )
-        signature = fingerprint(
-            {"card_id": identifier, **body.model_dump(exclude={"idempotency_key"})}
-        )
-        replay = request_replay(db, user.id, "regenerate", body.idempotency_key, signature)
-        if replay is not None:
-            return job_data(replay, db)
-        card = db.get(Card, identifier)
         if not card or card.status == "deleted":
             raise HTTPException(404, "Вопрос удалён")
         if card.version != body.version:

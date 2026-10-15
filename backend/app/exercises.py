@@ -132,6 +132,27 @@ class MatchingExercise(Strict):
         return self
 
 
+def incorrect_order(tokens, accepted_orders):
+    """Find a distinct wrong bank in at most len(accepted_orders) + 1 steps."""
+    accepted = {tuple(order) for order in accepted_orders}
+    order = sorted(tokens)
+    for _ in range(len(accepted) + 1):
+        if tuple(order) not in accepted:
+            return order
+        # Next lexicographic multiset permutation skips indistinguishable swaps.
+        pivot = len(order) - 2
+        while pivot >= 0 and order[pivot] >= order[pivot + 1]:
+            pivot -= 1
+        if pivot < 0:
+            return None
+        successor = len(order) - 1
+        while order[successor] <= order[pivot]:
+            successor -= 1
+        order[pivot], order[successor] = order[successor], order[pivot]
+        order[pivot + 1 :] = reversed(order[pivot + 1 :])
+    return None
+
+
 class OrderingExercise(Strict):
     tokens: list[str] = Field(min_length=2, max_length=20)
     accepted_orders: list[list[str]] = Field(min_length=1, max_length=5)
@@ -144,6 +165,8 @@ class OrderingExercise(Strict):
             raise ValueError("Допустимый порядок должен содержать те же слова")
         if len({tuple(order) for order in self.accepted_orders}) != len(self.accepted_orders):
             raise ValueError("Допустимые порядки не должны повторяться")
+        if incorrect_order(self.tokens, self.accepted_orders) is None:
+            raise ValueError("Нужен хотя бы один неправильный порядок различимых слов")
         return self
 
 
@@ -242,6 +265,12 @@ def build_snapshot(card: dict) -> dict:
     elif kind == "ordering":
         tokens = [{"id": secrets.token_hex(12), "text": text} for text in value["tokens"]]
         random.SystemRandom().shuffle(tokens)
+        if [token["text"] for token in tokens] in value["accepted_orders"]:
+            fallback = incorrect_order(value["tokens"], value["accepted_orders"])
+            pools = {}
+            for token in tokens:
+                pools.setdefault(token["text"], []).append(token)
+            tokens = [pools[word].pop() for word in fallback]
         snapshot["exercise"] = {"tokens": tokens, "accepted_orders": value["accepted_orders"]}
     return snapshot
 

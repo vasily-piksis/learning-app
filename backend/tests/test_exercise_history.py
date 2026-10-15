@@ -63,3 +63,47 @@ def test_saved_feedback_is_not_regraded_on_replay_or_history(client, app, monkey
     with app.state.db.session() as db:
         stored = db.scalar(select(Attempt))
         assert stored.value["_grading"]["version"] == 1
+
+
+def test_ordering_new_repeat_and_saved_solved_bank_are_immutable(client, app, monkeypatch):
+    from app import exercises
+    from app.models import SessionCard
+
+    monkeypatch.setattr(exercises.random.SystemRandom, "shuffle", lambda self, values: None)
+    topic, _ = saved_exercise(client, app, "ordering")
+    session = client.post(
+        "/api/study", json={"topic_ids": [topic], "mode": "quiz", "question_types": ["ordering"]}
+    ).json()
+    bank = session["card"]["exercise"]["tokens"]
+    assert [token["text"] for token in bank] not in CASES["ordering"]["accepted_orders"]
+    # Emulate an already-persisted solved bank from the old implementation.
+    with app.state.db.session() as db:
+        row = db.scalar(select(SessionCard).where(SessionCard.session_id == session["id"]))
+        frozen = dict(row.snapshot)
+        pool = list(frozen["exercise"]["tokens"])
+        ordered = []
+        for word in CASES["ordering"]["accepted_orders"][0]:
+            token = next(token for token in pool if token["text"] == word)
+            ordered.append(token)
+            pool.remove(token)
+        frozen["exercise"] = {**frozen["exercise"], "tokens": ordered}
+        row.snapshot = frozen
+    saved = client.get(f"/api/study/{session['id']}").json()["card"]
+    assert saved["exercise"]["tokens"] == ordered
+    result = client.post(
+        f"/api/study/{session['id']}/answer",
+        json={
+            "position": 0,
+            "idempotency_key": "old-bank",
+            "order": [token["id"] for token in reversed(ordered)],
+        },
+    ).json()
+    assert result["correct"] is False
+    repeated = client.post(f"/api/study/{session['id']}/repeat").json()
+    assert [token["text"] for token in repeated["card"]["exercise"]["tokens"]] not in CASES[
+        "ordering"
+    ]["accepted_orders"]
+    assert (
+        client.get(f"/api/study/{session['id']}").json()["review"][0]["card"]["exercise"]["tokens"]
+        == ordered
+    )

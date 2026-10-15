@@ -115,3 +115,47 @@ def test_ending_requires_a_visible_word_stem_directly_before_the_slot(segments):
                 "case_sensitive": False,
             },
         )
+
+
+@pytest.mark.parametrize(
+    "tokens,orders",
+    [
+        (["a", "a"], [["a", "a"]]),
+        (["a", "b"], [["a", "b"], ["b", "a"]]),
+        (["a", "a", "b"], [["a", "a", "b"], ["a", "b", "a"], ["b", "a", "a"]]),
+    ],
+)
+def test_ordering_rejects_every_distinguishable_order_accepted(tokens, orders):
+    with pytest.raises(ValueError):
+        exercise_module().validate_exercise(
+            "ordering", {"tokens": tokens, "accepted_orders": orders}
+        )
+
+
+def test_ordering_identity_shuffle_uses_bounded_distinct_fallback(monkeypatch):
+    from itertools import permutations
+
+    from app import exercises
+
+    monkeypatch.setattr(exercises.random.SystemRandom, "shuffle", lambda self, values: None)
+    for tokens in (["a", "a", "b"], ["a", "b", "c"]):
+        orders = sorted(set(permutations(tokens)))
+        accepted = [list(order) for order in orders[:-1]]
+        value = {"tokens": tokens, "accepted_orders": accepted}
+        card = {"question_type": "ordering", "exercise": value}
+        frozen = exercises.build_snapshot(card)
+        assert [token["text"] for token in frozen["exercise"]["tokens"]] == list(orders[-1])
+        assert exercises.original_exercise(frozen)["accepted_orders"] == accepted
+
+
+def test_ordering_large_duplicate_bank_has_bounded_fallback(monkeypatch):
+    from app import exercises
+
+    monkeypatch.setattr(exercises.random.SystemRandom, "shuffle", lambda self, values: None)
+    orders = [["a"] * position + ["b"] + ["a"] * (19 - position) for position in range(19, 14, -1)]
+    frozen = exercises.build_snapshot(
+        {"question_type": "ordering", "exercise": {"tokens": orders[0], "accepted_orders": orders}}
+    )
+    assert [token["text"] for token in frozen["exercise"]["tokens"]] == ["a"] * 14 + ["b"] + [
+        "a"
+    ] * 5

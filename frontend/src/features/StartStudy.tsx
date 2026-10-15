@@ -159,11 +159,16 @@ export default function StartStudy({
             <Button
               variant="link"
               disabled={busy}
-              onClick={() =>
-                void openJob(row.preparation_job_id!).catch((e) =>
-                  setError(errorText(e))
-                )
-              }
+              onClick={() => {
+                if (row.kind === "picture_description")
+                  navigate(
+                    `library/topic/${row.topic.id}/create/picture_description`
+                  )
+                else
+                  void openJob(row.preparation_job_id!).catch((e) =>
+                    setError(errorText(e))
+                  )
+              }}
             >
               {t("Открыть дополнительную подготовку")}
             </Button>

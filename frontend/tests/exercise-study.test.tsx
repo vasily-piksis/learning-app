@@ -519,3 +519,33 @@ test("gap identifiers cannot read inherited object properties", async () => {
     '"constructor":"y"'
   )
 })
+
+test("additional picture preparation opens the picture apply surface when saved work is ready", async () => {
+  const fetch = vi.fn(
+    async () =>
+      new Response(JSON.stringify({ id: 42, kind: "regenerate" }), {
+        headers: { "Content-Type": "application/json" },
+      })
+  )
+  vi.stubGlobal("fetch", fetch)
+  const pictures = {
+    ...topic,
+    practice_availability: {
+      ...topic.practice_availability,
+      picture_description: {
+        ...ready(1),
+        preparation_job_id: 42,
+        preparation_status: "succeeded" as const,
+      },
+    },
+  }
+  render(<StartStudy topicIds={[1]} topics={[pictures]} />)
+  await selectMethod("Описание картинки")
+  await userEvent.click(
+    screen.getByRole("button", { name: "Открыть дополнительную подготовку" })
+  )
+  await waitFor(() =>
+    expect(location.hash).toBe("#library/topic/1/create/picture_description")
+  )
+  expect(fetch).not.toHaveBeenCalled()
+})

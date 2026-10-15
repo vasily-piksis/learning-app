@@ -28,6 +28,9 @@ def quiz_ready(card):
 
 
 def preparation_job(db, user_id, topic_ids, snapshots):
+    snapshots = [
+        {key: value for key, value in card.items() if key != "images"} for card in snapshots
+    ]
     signature = [
         (card["id"], card["version"], json.dumps(card.get("sources", []), sort_keys=True))
         for card in snapshots

@@ -351,7 +351,10 @@ def candidates(
         }
 
 
-def serve(database, asset):
+def serve(database, asset, *, candidate=False):
+    allowed = {"draft", "obsolete"} if candidate else {"ready"}
+    if not asset or asset.stage not in allowed:
+        raise HTTPException(404, "Изображение недоступно")
     path = asset_path(database, asset)
     if not path.is_file():
         raise HTTPException(404, "Изображение недоступно")
@@ -368,7 +371,7 @@ def preview(identifier: str, request: Request):
     with request.app.state.db.session() as db:
         asset = owned_candidate(db, identifier, user.id)
         live_card(db, asset.target_card_id)
-        return serve(request.app.state.db, asset)
+        return serve(request.app.state.db, asset, candidate=True)
 
 
 @router.post("/image-candidates/{identifier}/rebase")

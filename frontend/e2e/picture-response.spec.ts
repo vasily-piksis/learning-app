@@ -68,24 +68,39 @@ for (const locale of ["en", "pl", "ru"] as const)
       })
     ).json()
     const label = (english: string) => {
-      const entry = Object.entries(translations).find(([, value]) => value.en === english)
+      const entry = Object.entries(translations).find(
+        ([, value]) => value.en === english
+      )
       if (!entry || locale === "en") return english
       return locale === "ru" ? entry[0] : entry[1].pl
     }
-    await page.getByLabel("Interface language", { exact: true }).selectOption(locale)
+    await page
+      .getByLabel("Interface language", { exact: true })
+      .selectOption(locale)
     await page.goto(`/#library/topic/${topic.id}/create/picture_description`)
     await page
       .getByLabel(label("Source picture"), { exact: true })
-      .setInputFiles({ name: label("field.png"), mimeType: "image/png", buffer: png })
-    await page.getByLabel(label("Description language (pl, en, ru, lt)")).fill(locale)
+      .setInputFiles({
+        name: label("field.png"),
+        mimeType: "image/png",
+        buffer: png,
+      })
+    await page
+      .getByLabel(label("Description language (pl, en, ru, lt)"))
+      .fill(locale)
     await page.getByRole("combobox", { name: label("CEFR level") }).click()
     await page.getByRole("option", { name: label("A1"), exact: true }).click()
     await page.getByLabel(label("Minimum words (optional)")).fill("100")
     await page
-      .getByRole("button", { name: label("Create draft without AI"), exact: true })
+      .getByRole("button", {
+        name: label("Create draft without AI"),
+        exact: true,
+      })
       .click()
     await expect(
-      page.getByText(label("First prepare and apply criteria based on the picture."))
+      page.getByText(
+        label("First prepare and apply criteria based on the picture.")
+      )
     ).toBeVisible()
     await expect(
       page.getByRole("button", { name: label("Save"), exact: true })
@@ -106,7 +121,10 @@ for (const locale of ["en", "pl", "ru"] as const)
       fullPage: true,
     })
     await page
-      .getByRole("button", { name: label("Prepare criteria (paid)"), exact: true })
+      .getByRole("button", {
+        name: label("Prepare criteria (paid)"),
+        exact: true,
+      })
       .click()
     await expect(
       page.getByRole("button", { name: label("Apply variant"), exact: true })
@@ -177,13 +195,84 @@ for (const locale of ["en", "pl", "ru"] as const)
       .click()
     await expect(page.getByRole("dialog")).not.toBeVisible()
     await page.getByRole("button", { name: label("Save"), exact: true }).click()
+    if (locale === "en") {
+      const additional = await (
+        await page.request.post(`/api/topics/${topic.id}/picture-drafts`, {
+          headers,
+          multipart: {
+            language: "pl",
+            level: "A1",
+            key: crypto.randomUUID(),
+            image: {
+              name: "additional.png",
+              mimeType: "image/png",
+              buffer: png,
+            },
+          },
+        })
+      ).json()
+      const job = await (
+        await page.request.post(`/api/cards/${additional.id}/prepare-picture`, {
+          headers,
+          data: {
+            version: 1,
+            language: "pl",
+            level: "A1",
+            idempotency_key: crypto.randomUUID(),
+          },
+        })
+      ).json()
+      await expect
+        .poll(
+          async () =>
+            (await (await page.request.get(`/api/jobs/${job.id}`)).json())
+              .status
+        )
+        .toBe("succeeded")
+    }
     await page
       .getByRole("link", { name: label("Back to topic"), exact: true })
       .last()
       .click()
     await page.getByRole("combobox", { name: label("Practice method") }).click()
-    await page.getByRole("option", { name: label("Picture description"), exact: false }).click()
-    await page.getByRole("checkbox", { name: label("Enable paid AI grading") }).check()
+    await page
+      .getByRole("option", { name: label("Picture description"), exact: false })
+      .click()
+    if (locale === "en") {
+      await page
+        .getByRole("button", {
+          name: "Open additional preparation",
+          exact: true,
+        })
+        .click()
+      await expect(page).toHaveURL(
+        new RegExp(`#library/topic/${topic.id}/create/picture_description$`)
+      )
+      await page
+        .getByRole("button", { name: "Prepare criteria (paid)", exact: true })
+        .last()
+        .click()
+      await expect(
+        page.getByRole("button", { name: "Apply variant", exact: true })
+      ).toBeVisible()
+      await page.screenshot({
+        path: `/tmp/final-fix-picture-navigation-${info.project.name}.png`,
+        fullPage: true,
+      })
+      await page.goto(`/#library/topic/${topic.id}`)
+      await page
+        .getByRole("combobox", { name: label("Practice method") })
+        .click()
+      await page
+        .getByRole("option", {
+          name: label("Picture description"),
+          exact: false,
+        })
+        .click()
+    }
+    await page
+      .getByRole("checkbox", { name: label("Enable paid AI grading") })
+      .check()
     await page
       .getByRole("button", { name: label("Start studying"), exact: true })
       .click()

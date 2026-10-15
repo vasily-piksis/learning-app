@@ -626,3 +626,260 @@ def test_picture_explanation_worker_uses_frozen_bytes_and_rechecks_cancel_before
     assert len(explanation) == (0 if cancel_before_retry else 1)
     if explanation:
         assert explanation[0]["text"] == "To zielone pole."
+
+
+@pytest.mark.parametrize("recovery", ["replay", "delete"])
+@pytest.mark.parametrize("checkpoint", ["file", "directory"])
+def test_picture_upload_process_exit_after_fsync_is_accounted_on_restart(
+    client, app, recovery, checkpoint
+):
+    import base64
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from app.main import create_app
+    from app.models import ImageAsset, PictureDraftRequest
+    from app.question_images import asset_path
+    from fastapi.testclient import TestClient
+
+    topic = make_topic(client)
+    script = """
+import asyncio, base64, io, json, os, stat, sys
+from types import SimpleNamespace
+from fastapi import Request, UploadFile
+from app.config import Settings
+from app.main import create_app
+from app import picture_responses
+args = json.loads(sys.stdin.read())
+app = create_app(Settings(_env_file=None, data_dir=args['directory']), worker=False)
+picture_responses.require_user = lambda request: SimpleNamespace(id=1)
+original = os.fsync
+def crash(descriptor):
+    original(descriptor)
+    if args["checkpoint"] == "file" or stat.S_ISDIR(os.fstat(descriptor).st_mode):
+        os._exit(93)
+os.fsync = crash
+asyncio.run(picture_responses.upload_draft(args['topic'], Request({'type': 'http', 'app': app}), UploadFile(file=io.BytesIO(base64.b64decode(args['bytes']))), 'pl', 'A1', 'interrupted', None, None))
+"""
+    crashed = subprocess.run(
+        [sys.executable, "-c", script],
+        input=json.dumps(
+            {
+                "directory": str(app.state.settings.data_dir),
+                "checkpoint": checkpoint,
+                "topic": topic,
+                "bytes": base64.b64encode(picture()).decode(),
+            }
+        ),
+        text=True,
+        capture_output=True,
+        timeout=30,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    assert crashed.returncode == 93, crashed.stderr
+    files = list((app.state.settings.data_dir / "question-images").glob("*.webp*"))
+    assert len(files) == 1
+    with app.state.db.session() as db:
+        assets = list(db.scalars(select(ImageAsset)))
+        assert len(assets) == 1, (
+            "Fsynced private bytes must have a committed asset before process death"
+        )
+        asset = assets[0]
+        assert asset.stage == "writing"
+        draft_request = db.scalar(select(PictureDraftRequest))
+        assert draft_request is not None
+        card_id, asset_id = draft_request.card_id, asset.id
+        path = asset_path(app.state.db, asset)
+    assert files[0].stat().st_mode & 0o777 == 0o600
+    assert client.get(f"/api/cards/{card_id}/images/question").status_code == 404
+    restarted = create_app(app.state.settings, worker=False)
+    with TestClient(restarted) as recovered:
+        login = recovered.post(
+            "/api/auth/login",
+            json={"username": "child", "password": "strong-password"},
+            headers={"Origin": "http://testserver"},
+        )
+        recovered.headers.update(
+            {"Origin": "http://testserver", "X-CSRF-Token": login.json()["csrf_token"]}
+        )
+        assert recovered.get(f"/api/cards/{card_id}/images/question").status_code == 404
+        if recovery == "replay":
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                responses = list(
+                    pool.map(lambda _: upload(recovered, topic, key="interrupted"), range(2))
+                )
+            assert all(response.status_code == 200 for response in responses)
+            assert responses[0].json() == responses[1].json()
+            response = responses[0]
+            assert response.json()["id"] == card_id
+            assert response.json()["images"]["question"]["asset_id"] == asset_id
+            assert recovered.get(response.json()["images"]["question"]["url"]).status_code == 200
+            assert upload(recovered, topic, key="interrupted").json() == response.json()
+            assert upload(recovered, topic, key="interrupted", level="B2").status_code == 409
+        assert recovered.delete(f"/api/cards/{card_id}").status_code == 200
+        assert not path.exists()
+        assert upload(recovered, topic, key="interrupted").status_code == 410
+    with restarted.state.db.session() as db:
+        assert len(list(db.scalars(select(Card)))) == 1
+        assert len(list(db.scalars(select(PictureDraftRequest)))) == 1
+        assert len(list(db.scalars(select(ImageAsset)))) == 1
+        assert db.get(ImageAsset, asset_id).stage == "deleted"
+    assert not list(Path(app.state.settings.data_dir / "question-images").iterdir())
+
+
+@pytest.mark.parametrize("mutation", ["settings", "apply", "replace", "delete"])
+def test_generic_picture_replay_survives_mutable_state_and_lost_ack(
+    client, app, monkeypatch, mutation
+):
+    from app.jobs import run_job
+    from app.models import EvaluationRequest, Job
+
+    topic = make_topic(client)
+    app.state.settings.__dict__.update(
+        picture_description_enabled=True, openai_vision_enabled=True, openai_api_key="fixture"
+    )
+    card = upload(client, topic).json()
+    url = f"/api/cards/{card['id']}/regenerate"
+    body = {"version": 1, "idempotency_key": "lost-ack", "another_variant": False}
+    first = client.post(url, json=body)
+    assert first.status_code == 200, first.text
+    job_id = first.json()["id"]
+    sends = []
+
+    def parse(schema, messages, tokens, **kwargs):
+        kwargs["before_request"]()
+        sends.append(messages)
+        with app.state.db.session() as db:
+            source = db.get(Job, job_id).payload["picture_source"]
+        return schema.model_validate(criteria(source))
+
+    monkeypatch.setattr(app.state.ai, "parse", parse)
+    run_job(app.state.db, app.state.ai, job_id)
+    result = client.get(f"/api/jobs/{job_id}").json()
+    assert result["status"] == "succeeded", result
+    if mutation == "apply":
+        assert (
+            client.post(
+                f"/api/jobs/{job_id}/apply-regeneration",
+                json={"candidate": result["result"]["candidate"]},
+            ).status_code
+            == 200
+        )
+    elif mutation == "settings":
+        with app.state.db.session() as db:
+            row = db.get(Card, card["id"])
+            row.exercise = {**row.exercise, "level": "B2", "min_words": 25}
+            row.version += 1
+    elif mutation == "replace":
+        candidate = client.post(
+            f"/api/cards/{card['id']}/image-candidates",
+            data={"slot": "question", "version": 1},
+            files={"file": ("other.png", picture(), "image/png")},
+        ).json()
+        changed = client.patch(
+            f"/api/cards/{card['id']}",
+            json={
+                "version": 1,
+                "question": card["question"],
+                "exercise": card["exercise"],
+                "image_updates": {"question": {"asset_id": candidate["id"]}},
+            },
+        )
+        assert changed.status_code == 200, changed.text
+    else:
+        assert client.delete(f"/api/cards/{card['id']}").status_code == 200
+    with app.state.db.session() as db:
+        jobs_before = len(list(db.scalars(select(Job))))
+        reservations_before = len(list(db.scalars(select(EvaluationRequest))))
+    replay = client.post(url, json=body)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["id"] == job_id
+    assert client.post(url, json={**body, "another_variant": True}).status_code == 409
+    assert client.post(url, json={**body, "version": 2}).status_code == 409
+    if mutation in {"settings", "replace"}:
+        assert (
+            client.post(
+                f"/api/jobs/{job_id}/apply-regeneration",
+                json={"candidate": result["result"]["candidate"]},
+            ).status_code
+            == 409
+        )
+    with app.state.db.session() as db:
+        assert len(list(db.scalars(select(Job)))) == jobs_before
+        assert len(list(db.scalars(select(EvaluationRequest)))) == reservations_before
+    assert len(sends) == 1
+
+
+def test_picture_delete_between_intent_and_publication_cannot_recreate_bytes(
+    client, app, monkeypatch
+):
+    from contextlib import contextmanager
+
+    from app.deletion import remove
+    from app.models import ImageAsset, PictureDraftRequest
+
+    topic = make_topic(client)
+    original = app.state.db.session
+    removed = []
+
+    @contextmanager
+    def delete_after_commit():
+        with original() as db:
+            yield db
+            intent = db.scalar(select(PictureDraftRequest))
+            card_id = intent.card_id if intent else None
+        if card_id and not removed:
+            removed.append(card_id)
+            monkeypatch.setattr(app.state.db, "session", original)
+            with original() as db:
+                remove(db, app.state.db, [], [db.get(Card, card_id)])
+
+    monkeypatch.setattr(app.state.db, "session", delete_after_commit)
+    assert upload(client, topic).status_code == 404
+    assert len(removed) == 1
+    assert upload(client, topic).status_code == 410
+    assert not list((app.state.settings.data_dir / "question-images").iterdir())
+    with original() as db:
+        assert db.scalar(select(ImageAsset)).stage == "deleted"
+
+
+def test_picture_failed_upload_recovery_does_not_recover_another_active_writer(
+    client, app, monkeypatch
+):
+    from pathlib import Path
+
+    from app import picture_responses
+    from app.models import ImageAsset
+    from app.question_images import asset_path, normalize_image
+
+    topic = make_topic(client)
+    with app.state.db.session() as db:
+        other = Card(topic_id=topic, question="Other", answer="", mode="quiz", status="draft")
+        db.add(other)
+        db.flush()
+        asset = ImageAsset(
+            id="a" * 32,
+            filename="a" * 32 + ".webp",
+            owner_user_id=1,
+            target_card_id=other.id,
+            target_version=1,
+            slot="question",
+        )
+        db.add(asset)
+        db.flush()
+        path = Path(str(asset_path(app.state.db, asset)) + ".part")
+        path.write_bytes(normalize_image(picture())[0])
+    monkeypatch.setattr(
+        picture_responses.os,
+        "fsync",
+        lambda descriptor: (_ for _ in ()).throw(OSError("disk interrupted")),
+    )
+    with pytest.raises(OSError, match="disk interrupted"):
+        upload(client, topic)
+    with app.state.db.session() as db:
+        assert db.get(ImageAsset, "a" * 32).stage == "writing"
+    assert path.is_file()

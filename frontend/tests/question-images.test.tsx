@@ -955,3 +955,47 @@ test("an unreadable job poll retains pending state and cannot expose fresh paid 
     )
   ).toBeVisible()
 })
+
+test("lost free-save acknowledgement can be replayed without a paid request", async () => {
+  const calls = paidServer([
+    {
+      id: 21,
+      kind: "generate_image",
+      card_id: 1,
+      slot: "question",
+      status: "failed",
+      result: { can_retry_save: true },
+    },
+  ])
+  const serverFetch = globalThis.fetch
+  let lost = false
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, init?: RequestInit) => {
+      const response = await serverFetch(path, init)
+      if (path.endsWith("/retry-image-save") && !lost) {
+        lost = true
+        throw new Error("Acknowledgement lost")
+      }
+      return response
+    })
+  )
+  render(<EditQuestion card={card} onSaved={() => {}} />)
+  await edit()
+  const slot = screen.getByRole("group", { name: "Question image" })
+  await userEvent.click(
+    await within(slot).findByRole("button", {
+      name: "Retry saving image (free)",
+    })
+  )
+  await screen.findByText(
+    "Cannot connect to the server. Check your connection and try again."
+  )
+  await userEvent.click(
+    within(slot).getByRole("button", { name: "Check the same request" })
+  )
+  await within(slot).findByRole("button", { name: "Use draft" })
+  expect(
+    calls.filter((call) => call.method === "POST").map((call) => call.path)
+  ).toEqual(["/api/jobs/21/retry-image-save", "/api/jobs/21/retry-image-save"])
+})
