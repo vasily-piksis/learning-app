@@ -12,6 +12,8 @@ import { PendingIcon, Sources } from "@/components/shared"
 import { QuestionImageView } from "./QuestionImages"
 import ExerciseSolution from "./ExerciseSolution"
 import EvaluationFeedback from "./EvaluationFeedback"
+import VoiceAnswer, { type AudioDTO } from "./VoiceAnswer"
+import { wordTarget } from "@/lib/word-target"
 import type {
   StudySession,
   Feedback,
@@ -24,6 +26,7 @@ type Frozen = {
   body: {
     position?: number
     free_text?: string
+    audio_answer_id?: string | null
     idempotency_key: string
     acknowledge_extra_cost?: true
   }
@@ -78,6 +81,12 @@ export function isEvaluationFeedback(
   if (!object(value) || !object(value.card) || !object(value.word_limit))
     return false
   return (
+    (value.input_method !== "voice" ||
+      (object(value.voice) &&
+        typeof value.voice.original_transcript === "string" &&
+        integer(value.voice.original_word_count) &&
+        Number(value.voice.original_word_count) >= 1 &&
+        typeof value.voice.was_edited === "boolean")) &&
     integer(value.evaluation_id) &&
     Number(value.evaluation_id) > 0 &&
     ["free_response", "picture_description"].includes(
@@ -182,7 +191,9 @@ function isState(value: unknown, full: boolean): value is EvaluationState {
     (!full ||
       (object(value.submission) &&
         typeof value.submission.free_text === "string" &&
-        value.submission.audio_answer_id === null)) &&
+        (value.submission.audio_answer_id === null ||
+          (typeof value.submission.audio_answer_id === "string" &&
+            /^[a-f0-9]{32}$/.test(value.submission.audio_answer_id))))) &&
     (value.status !== "completed" || isEvaluationFeedback(value.feedback))
   )
 }
@@ -215,6 +226,9 @@ export default function FreeResponse({
     }
   })
   const [text, setText] = useState(frozen?.text || "")
+  const methodChosen = useRef(false)
+  const [voiceMode, setVoiceMode] = useState(false)
+  const [audio, setAudio] = useState<AudioDTO | null>(null)
   const [state, setState] = useState<EvaluationState | null>(null)
   const [feedback, setFeedback] = useState<(Feedback & EvaluationGrade) | null>(
     null
@@ -275,6 +289,7 @@ export default function FreeResponse({
         }
         setState(value)
         setText(value.submission!.free_text)
+        if (value.submission!.audio_answer_id) setVoiceMode(true)
         setLoaded(true)
         setUncertain(false)
       } catch {
@@ -313,6 +328,9 @@ export default function FreeResponse({
               body: {
                 position: session.position,
                 free_text: text,
+                audio_answer_id: voiceMode
+                  ? (audio?.audio_answer_id ?? null)
+                  : null,
                 idempotency_key: crypto.randomUUID(),
               },
             })
@@ -323,7 +341,13 @@ export default function FreeResponse({
         throw new Error("Invalid acknowledgement")
       setState({
         ...value,
-        submission: { free_text: request.text, audio_answer_id: null },
+        submission: {
+          free_text: request.text,
+          audio_answer_id:
+            request.body.audio_answer_id ??
+            state?.submission?.audio_answer_id ??
+            null,
+        },
       })
       setAck(false)
       // A valid acknowledgement settles this HTTP operation; the immutable answer remains frozen by state.
@@ -355,39 +379,114 @@ export default function FreeResponse({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <QuestionImageView image={card.images?.question} />
-        <Field>
-          <FieldLabel htmlFor="free-response">
-            {t("Твой развёрнутый ответ")}
-          </FieldLabel>
-          <Textarea
-            id="free-response"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
+        <div className="flex gap-2" aria-label={t("Способ ответа")}>
+          <Button
+            variant={voiceMode ? "outline" : "secondary"}
+            aria-pressed={!voiceMode}
             disabled={locked}
-            className="min-h-48"
-            aria-describedby="free-count"
-          />
-        </Field>
-        <p id="free-count">
-          {settings &&
-          (settings.min_words !== null || settings.max_words !== null)
-            ? t("Слов: {count} · цель {min}–{max}", {
-                count: words,
-                min: settings.min_words ?? "—",
-                max: settings.max_words ?? "—",
-              })
-            : t("Слов: {count}", { count: words })}
-        </p>
-        {outside && !feedback && (
-          <p className="flex items-start gap-2">
-            <CircleAlert aria-hidden="true" />
-            {t(
-              "Вне рекомендуемого диапазона слов. Ответ всё равно можно отправить."
-            )}
-          </p>
+            onClick={() => {
+              methodChosen.current = true
+              setVoiceMode(false)
+            }}
+          >
+            {t("Напиши")}
+          </Button>
+          <Button
+            variant={voiceMode ? "secondary" : "outline"}
+            aria-pressed={voiceMode}
+            disabled={locked}
+            onClick={() => {
+              methodChosen.current = true
+              setVoiceMode(true)
+            }}
+          >
+            {t("Расскажи")}
+          </Button>
+        </div>
+        <VoiceAnswer
+          sessionId={session.id}
+          position={session.position}
+          language={settings?.language || ""}
+          visible={voiceMode}
+          disabled={locked}
+          onTranscript={(value) => {
+            setAudio(value)
+            if (
+              value &&
+              !state &&
+              !frozen &&
+              !feedback &&
+              (voiceMode || !methodChosen.current)
+            ) {
+              setVoiceMode(true)
+              setText(value.original_transcript || "")
+            }
+          }}
+        />
+        {voiceMode && audio?.status === "ready" && (
+          <>
+            <p>
+              {t(
+                "Проверь и при необходимости исправь транскрипцию перед оценкой."
+              )}
+            </p>
+            <details>
+              <summary>{t("Исходная транскрипция")}</summary>
+              <p className="whitespace-pre-wrap">{audio.original_transcript}</p>
+            </details>
+            <p>
+              {t("Исходных слов: {count}", {
+                count: countWords(audio.original_transcript || ""),
+              })}
+            </p>
+            <p>
+              {t(
+                text === audio.original_transcript
+                  ? "Оценивается исходная транскрипция"
+                  : "Оценивается отредактированная транскрипция"
+              )}
+            </p>
+            <p>
+              {t(
+                "Оценивается текст. Произношение, акцент, темп и паузы не оцениваются."
+              )}
+            </p>
+          </>
         )}
-        {(chars > 10000 || words > 2000) && (
-          <p role="alert">{t("Максимум 10000 символов и 2000 слов.")}</p>
+        {(!voiceMode || audio?.status === "ready" || !!state || !!frozen) && (
+          <>
+            <Field>
+              <FieldLabel htmlFor="free-response">
+                {t("Твой развёрнутый ответ")}
+              </FieldLabel>
+              <Textarea
+                id="free-response"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                disabled={locked}
+                className="min-h-48"
+                aria-describedby="free-count"
+              />
+            </Field>
+            <p id="free-count">
+              {wordTarget(
+                words,
+                settings?.min_words ?? null,
+                settings?.max_words ?? null
+              )}
+            </p>
+            {outside && !feedback && (
+              <p className="flex items-start gap-2">
+                <CircleAlert aria-hidden="true" />
+                {t(
+                  "Вне рекомендуемого диапазона слов. Ответ всё равно можно отправить."
+                )}
+              </p>
+            )}
+            {(chars > 10000 || words > 2000) && (
+              <p role="alert">{t("Максимум 10000 символов и 2000 слов.")}</p>
+            )}
+          </>
         )}
         {uncertain && (
           <p role="status">
@@ -453,7 +552,12 @@ export default function FreeResponse({
           !state && (
             <Button
               disabled={
-                !loaded || busy || !words || words > 2000 || chars > 10000
+                !loaded ||
+                busy ||
+                !words ||
+                words > 2000 ||
+                chars > 10000 ||
+                (voiceMode && audio?.status !== "ready")
               }
               onClick={() => void send()}
             >

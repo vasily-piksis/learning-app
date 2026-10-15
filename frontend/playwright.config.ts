@@ -20,10 +20,35 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "desktop",
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: {
+          args: [
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream",
+          ],
+        },
+      },
+    },
     {
       name: "mobile",
-      use: { ...devices["Pixel 5"], viewport: { width: 390, height: 844 } },
+      use: {
+        ...devices["Pixel 5"],
+        viewport: { width: 390, height: 844 },
+        launchOptions: {
+          args: [
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream",
+          ],
+        },
+      },
+    },
+    {
+      name: "webkit-voice",
+      testMatch: /voice-answer\.spec\.ts/,
+      use: { ...devices["iPhone 13"] },
     },
   ],
   webServer: {

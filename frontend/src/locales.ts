@@ -1,4 +1,121 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Запись больше недоступна. Запишите ответ снова.": {
+    pl: "Nagranie nie jest już dostępne. Nagraj odpowiedź ponownie.",
+    en: "The recording is no longer available. Record again.",
+  },
+  "Удалить запись": { pl: "Usuń nagranie", en: "Delete recording" },
+  "Способ ответа": { pl: "Sposób odpowiedzi", en: "Answer method" },
+  Напиши: { pl: "Napisz", en: "Write" },
+  Расскажи: { pl: "Opowiedz", en: "Tell" },
+  "Голосовой ответ": { pl: "Odpowiedź głosowa", en: "Voice answer" },
+  "Язык записи: {language}": {
+    pl: "Język nagrania: {language}",
+    en: "Recording language: {language}",
+  },
+  "Запись до 180 секунд. Звук удаляется после распознавания и не хранится в истории.":
+    {
+      pl: "Nagranie do 180 sekund. Dźwięk jest usuwany po transkrypcji i nie jest zapisywany w historii.",
+      en: "Record up to 180 seconds. Audio is deleted after transcription and is not kept in history.",
+    },
+  "Проверяем состояние записи": {
+    pl: "Sprawdzanie stanu nagrania",
+    en: "Checking recording status",
+  },
+  "Распознавание сейчас недоступно. Можно написать ответ.": {
+    pl: "Transkrypcja jest teraz niedostępna. Możesz napisać odpowiedź.",
+    en: "Transcription is currently unavailable. You can write your answer.",
+  },
+  "Микрофон недоступен или запись не поддерживается. Можно написать ответ.": {
+    pl: "Mikrofon jest niedostępny lub nagrywanie nie jest obsługiwane. Możesz napisać odpowiedź.",
+    en: "Microphone unavailable or recording unsupported. You can write your answer.",
+  },
+  "сек.": { pl: "s", en: "sec." },
+  "Остановить запись": { pl: "Zatrzymaj nagrywanie", en: "Stop recording" },
+  "Записать заново": { pl: "Nagraj ponownie", en: "Record again" },
+  Записать: { pl: "Nagraj", en: "Record" },
+  "Прослушать запись": { pl: "Odsłuchaj nagranie", en: "Listen to recording" },
+  "Распознать (платно)": {
+    pl: "Transkrybuj (płatne)",
+    en: "Transcribe (paid)",
+  },
+  "Распознаём запись": {
+    pl: "Trwa transkrypcja",
+    en: "Transcribing recording",
+  },
+  "Дневной лимит распознавания исчерпан": {
+    pl: "Dzienny limit transkrypcji został wyczerpany",
+    en: "Daily transcription limit reached",
+  },
+  "Распознавание не завершено. Оценка не выставлена.": {
+    pl: "Transkrypcja nie została ukończona. Nie wystawiono oceny.",
+    en: "Transcription did not finish. No score was assigned.",
+  },
+  "Не удалось подтвердить распознавание. Проверь состояние снова; новый платный запрос не создаётся.":
+    {
+      pl: "Nie udało się potwierdzić transkrypcji. Sprawdź stan ponownie; nie powstanie nowe płatne żądanie.",
+      en: "Could not confirm transcription. Check again; no new paid request is created.",
+    },
+  "Проверить распознавание снова": {
+    pl: "Sprawdź transkrypcję ponownie",
+    en: "Check transcription again",
+  },
+  "Повторить распознавание (платно)": {
+    pl: "Ponów transkrypcję (płatne)",
+    en: "Retry transcription (paid)",
+  },
+  "Язык записи не определён": {
+    pl: "Nie rozpoznano języka nagrania",
+    en: "Recording language is unknown",
+  },
+  "Язык записи отличается от задания": {
+    pl: "Język nagrania różni się od zadania",
+    en: "Recording language differs from the assignment",
+  },
+  "Язык записи соответствует заданию": {
+    pl: "Język nagrania odpowiada zadaniu",
+    en: "Recording language matches the assignment",
+  },
+  "Распознано: {languages}": {
+    pl: "Rozpoznano: {languages}",
+    en: "Detected: {languages}",
+  },
+  "Проверь и при необходимости исправь транскрипцию перед оценкой.": {
+    pl: "Sprawdź i w razie potrzeby popraw transkrypcję przed oceną.",
+    en: "Review and edit the transcript before grading.",
+  },
+  "Исходная транскрипция": {
+    pl: "Oryginalna transkrypcja",
+    en: "Original transcript",
+  },
+  "Исходных слов: {count}": {
+    pl: "Słowa w oryginale: {count}",
+    en: "Original words: {count}",
+  },
+  "Оценивается исходная транскрипция": {
+    pl: "Oceniana jest oryginalna transkrypcja",
+    en: "The original transcript is graded",
+  },
+  "Оценивается отредактированная транскрипция": {
+    pl: "Oceniana jest edytowana transkrypcja",
+    en: "The edited transcript is graded",
+  },
+  "Оценивается текст. Произношение, акцент, темп и паузы не оцениваются.": {
+    pl: "Oceniany jest tekst. Wymowa, akcent, tempo i pauzy nie są oceniane.",
+    en: "Text is graded. Pronunciation, accent, pace and pauses are not assessed.",
+  },
+  "Звук не хранится в истории": {
+    pl: "Dźwięk nie jest zapisywany w historii",
+    en: "Audio is not kept in history",
+  },
+  "Слов: {count} · не менее {min}": {
+    pl: "Słowa: {count} · co najmniej {min}",
+    en: "Words: {count} · at least {min}",
+  },
+  "Слов: {count} · не более {max}": {
+    pl: "Słowa: {count} · najwyżej {max}",
+    en: "Words: {count} · at most {max}",
+  },
+
   "Задание выполнено": { pl: "Zadanie wykonane", en: "Assignment completed" },
   "Задание пока не выполнено": {
     pl: "Zadanie jeszcze niewykonane",

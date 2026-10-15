@@ -1,4 +1,5 @@
 import { Check, CircleAlert, Pencil } from "lucide-react"
+import { wordTarget } from "@/lib/word-target"
 import { t } from "@/i18n"
 import type { Card, EvaluationGrade } from "@/types"
 export default function EvaluationFeedback({
@@ -68,8 +69,11 @@ export default function EvaluationFeedback({
         )}
       </p>
       <p>
-        {t("Слов: {count}", { count: feedback.word_count })} ·{" "}
-        {feedback.word_limit.min ?? "—"}–{feedback.word_limit.max ?? "—"}
+        {wordTarget(
+          feedback.word_count,
+          feedback.word_limit.min,
+          feedback.word_limit.max
+        )}
       </p>
       <p>
         {t(
@@ -78,6 +82,34 @@ export default function EvaluationFeedback({
             : "Язык ответа отличается от задания"
         )}
       </p>
+      {feedback.input_method === "voice" && feedback.voice && (
+        <>
+          <p>
+            {t(
+              feedback.voice.was_edited
+                ? "Оценивается отредактированная транскрипция"
+                : "Оценивается исходная транскрипция"
+            )}
+          </p>
+          <details>
+            <summary>{t("Исходная транскрипция")}</summary>
+            <p className="whitespace-pre-wrap">
+              {feedback.voice.original_transcript}
+            </p>
+          </details>
+          <p>
+            {t("Исходных слов: {count}", {
+              count: feedback.voice.original_word_count,
+            })}
+          </p>
+          <p>
+            {t(
+              "Оценивается текст. Произношение, акцент, темп и паузы не оцениваются."
+            )}
+          </p>
+          <p>{t("Звук не хранится в истории")}</p>
+        </>
+      )}
       {feedback.corrections.map((correction, i) => (
         <div key={i} className="flex flex-col gap-1">
           <p className="flex items-start gap-2">

@@ -549,3 +549,80 @@ def test_actual_sdk_picture_preparation_and_evaluation_schemas(tmp_path):
     assert len(requests) == 2
     wire = requests[1]["text"]["format"]["schema"]
     assert '"anyOf"' in json.dumps(wire)
+
+
+@pytest.mark.parametrize("cancel_before_retry", [False, True])
+def test_picture_explanation_worker_uses_frozen_bytes_and_rechecks_cancel_before_sdk_retry(
+    client, app, monkeypatch, retry_waits, cancel_before_retry
+):
+    import base64
+    import json
+
+    import httpx
+    from app.jobs import run_job
+    from app.models import Attempt, Job, SessionCard
+    from app.picture_responses import get_picture_evidence
+    from test_retry import ai_client, completed
+
+    topic, card, _ = prepared(client, app, monkeypatch)
+    started = client.post(
+        "/api/study",
+        json={
+            "topic_ids": [topic],
+            "mode": "quiz",
+            "question_types": ["picture_description"],
+            "include_ai_evaluated": True,
+        },
+    ).json()
+    with app.state.db.session() as db:
+        frozen = db.scalar(select(SessionCard).where(SessionCard.session_id == started["id"]))
+        original = get_picture_evidence(db, frozen.id, 1)
+        db.add(
+            Attempt(
+                user_id=1,
+                session_card_id=frozen.id,
+                idempotency_key="explanation-fixture",
+                value={"free_text": "Zielone pole."},
+                correct=True,
+            )
+        )
+    removed = client.patch(
+        f"/api/cards/{card['id']}",
+        json={
+            "version": card["version"],
+            "question": card["question"],
+            "exercise": card["exercise"],
+            "image_updates": {"question": {"asset_id": None}},
+        },
+    )
+    assert removed.status_code == 200
+    job = client.post(
+        f"/api/study/{started['id']}/explain", json={"position": 0, "question": "Dlaczego?"}
+    ).json()
+    calls = []
+
+    def response(request):
+        data = json.loads(request.content)
+        image = data["input"][1]["content"][1]["image_url"]
+        assert base64.b64decode(image.split(",", 1)[1]) == original.data
+        calls.append(data)
+        if len(calls) == 1:
+            if cancel_before_retry:
+                with app.state.db.session() as db:
+                    db.get(Job, job["id"]).status = "cancelled"
+            return httpx.Response(503, json={"error": {"message": "temporary"}})
+        return httpx.Response(
+            200, json=completed({"text": "To zielone pole.", "example": None, "sources": []})
+        )
+
+    ai, sdk = ai_client(app.state.settings.data_dir, response)
+    ai.settings = app.state.settings
+    with sdk:
+        run_job(app.state.db, ai, job["id"])
+    result = client.get(f"/api/jobs/{job['id']}").json()
+    assert len(calls) == (1 if cancel_before_retry else 2)
+    assert result["status"] == ("cancelled" if cancel_before_retry else "succeeded")
+    explanation = client.get(f"/api/study/{started['id']}/explanations?position=0").json()
+    assert len(explanation) == (0 if cancel_before_retry else 1)
+    if explanation:
+        assert explanation[0]["text"] == "To zielone pole."

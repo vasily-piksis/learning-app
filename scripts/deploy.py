@@ -32,7 +32,8 @@ def capture(command, **kwargs):
 
 def run(command, **kwargs):
     command = [shutil.which(command[0]) or command[0], *command[1:]]
-    subprocess.run(command, cwd=ROOT, stdin=subprocess.DEVNULL, check=True, **kwargs)  # nosec B603
+    kwargs.setdefault("stdin", subprocess.DEVNULL)
+    subprocess.run(command, cwd=ROOT, check=True, **kwargs)  # nosec B603
 
 
 def private_backups():
@@ -79,28 +80,30 @@ def cold_backup(backups, environment):
 
 def restore_backup(archive, volume, image, **kwargs):
     source = (ROOT / "scripts/restore_volume.py").read_text()
-    run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--label",
-            "traefik.enable=false",
-            "--mount",
-            f"type=volume,src={volume},dst=/data",
-            "--mount",
-            f"type=bind,src={archive},dst=/restore/cold.tar.gz,readonly",
-            "--entrypoint",
-            "python",
-            image,
-            "-c",
-            source,
-            "/restore/cold.tar.gz",
-        ],
-        **kwargs,
-    )
+    # The operator can read the private archive; the container UID cannot read a host bind.
+    with archive.open("rb") as backup:
+        run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-i",
+                "--network",
+                "none",
+                "--label",
+                "traefik.enable=false",
+                "--mount",
+                f"type=volume,src={volume},dst=/data",
+                "--entrypoint",
+                "python",
+                image,
+                "-c",
+                source,
+                "-",
+            ],
+            stdin=backup,
+            **kwargs,
+        )
 
 
 def previous_image_start(previous, environment):

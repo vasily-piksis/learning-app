@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import uuid
 
 import pytest
@@ -83,6 +84,32 @@ with db.session() as session:
  session.add(SessionCard(id=3,session_id=3,position=0,snapshot={'id':3,'snapshot_version':4,'question':'Opisz obrazek.','question_type':'picture_description','mode':'quiz','language':'pl','exercise':visual,'answer':'Zielone pole.','sources':[]}));session.flush()
  session.add(ImageAsset(id='b'*32,filename='picture.webp',owner_user_id=1,stage='ready',width=8,height=8,sha256=source['sha256'],size=len(raw)));session.flush()
  session.add(SessionImage(session_card_id=3,asset_id='b'*32,slot='question',alt='',image_role='source'))
+# Seed a completed voice evaluation plus a failed retained recording before the cold backup.
+from datetime import datetime,timedelta,timezone
+from app.models import Attempt,AudioAnswer,Evaluation,Job,TranscriptionRequest
+import wave
+with db.session() as session:
+ session.get(StudySession,2).status='completed';session.get(StudySession,2).position=1
+ job=Job(user_id=1,kind='evaluate_response',status='succeeded',payload={});session.add(job);session.flush()
+ transcript='Ąžuolas yra medis.'
+ grade={'version':2,'evaluation_id':1,'score':75,'correct':False,'word_count':4,'word_count_version':1,'word_limit':{'min':100,'max':150,'met':False},'language_match':True,'summary':'Aišku.','suggestions':[],'corrections':[],'rubric_scores':[{'criterion_id':'clarity','score':3,'explanation':'Aišku.'}],'point_checks':[{'point_id':'tree','met':True,'evidence':[]}],'input_method':'voice','voice':{'original_transcript':transcript,'original_word_count':3,'was_edited':True}}
+ submission={'free_text':'Ąžuolas yra didelis medis.','audio_answer_id':'c'*32}
+ session.add(Evaluation(id=1,session_card_id=2,user_id=1,job_id=job.id,request_key='qa-grade',fingerprint='d'*64,submission=submission,status='completed',applied_result=grade))
+ session.add(Attempt(user_id=1,session_card_id=2,idempotency_key='qa-grade',value={**submission,'_grading':grade},correct=False))
+ asr=Job(user_id=1,kind='transcribe_answer',status='succeeded',payload={});session.add(asr);session.flush()
+ expiry=datetime.now(timezone.utc)+timedelta(hours=23)
+ session.add(AudioAnswer(id='c'*32,session_card_id=2,user_id=1,job_id=asr.id,request_key='qa-ready-audio',sha256='e'*64,duration=1,expected_language='lt',detected_languages=['lt'],original_transcript=transcript,status='ready',was_edited=True,expires_at=expiry))
+ session.add(TranscriptionRequest(id='d'*32,job_id=asr.id,user_id=1,request_key='qa-ready-audio',seconds=1,model='fixture-only',status='succeeded',reserved_at=datetime.now(timezone.utc)))
+ session.add(StudySession(id=4,user_id=1,topic_ids=[1],mode='quiz',position=0,status='active'));session.flush()
+ session.add(SessionCard(id=4,session_id=4,position=0,snapshot=snapshot));session.flush()
+ failed=Job(user_id=1,kind='transcribe_answer',status='failed',payload={});session.add(failed);session.flush()
+ directory=Path('/data/answer-audio');directory.mkdir(exist_ok=True);directory.chmod(0o700)
+ path=directory/('f'*32+'.wav')
+ with wave.open(str(path),'wb') as recording:
+  recording.setparams((1,2,16000,0,'NONE','not compressed'));recording.writeframes(bytes(32000))
+ path.chmod(0o600)
+ session.add(AudioAnswer(id='f'*32,session_card_id=4,user_id=1,job_id=failed.id,request_key='qa-failed-audio',sha256=hashlib.sha256(path.read_bytes()).hexdigest(),duration=1,raw_path=path.name,expected_language='lt',status='failed',error_code='failed',expires_at=expiry))
+ (directory/('e'*32+'.part')).write_bytes(b'private-staged-upload')
 db.engine.dispose()
 """
 
@@ -133,14 +160,12 @@ def qa(tmp_path, monkeypatch):
     (root / ".env").chmod(0o600)
     override = b"services: {}\n"
     (root / "compose.override.yaml").write_bytes(override)
-    docker("volume", "create", "--label", f"learning.qa={token}", volume)
-    # Docker copies /data ownership from the non-root app image onto this fresh volume.
-    command_image(BEFORE, volume, INIT)
     old_config = {
         "name": project,
         "services": {
             "app": {
                 "image": BEFORE,
+                "labels": {"traefik.enable": "false"},
                 "environment": {
                     "DATA_DIR": "/data",
                     "OPENAI_API_KEY": "",
@@ -160,17 +185,28 @@ def qa(tmp_path, monkeypatch):
     (root / "compose.yaml").write_text(json.dumps(old_config))
     module = load_deploy()
     module.ROOT = root
-    module.run(["docker", "compose", "up", "-d", "--no-build", "--wait"])
     try:
+        docker("volume", "create", "--label", f"learning.qa={token}", volume)
+        # Docker copies the non-root image's /data ownership onto this fresh volume.
+        command_image(BEFORE, volume, INIT)
+        module.run(["docker", "compose", "up", "-d", "--no-build", "--wait"])
         yield module, root, volume, old_config, environment, override
     finally:
-        subprocess.run(
+        unwinding = sys.exc_info()[0] is not None
+        cleanup_errors = []
+        for args in (
             ["docker", "compose", "down", "--remove-orphans"],
-            cwd=root,
-            capture_output=True,
-            check=True,
-        )
-        docker("volume", "rm", volume)
+            ["docker", "volume", "rm", volume],
+        ):
+            try:
+                result = subprocess.run(args, cwd=root, capture_output=True, check=False)
+                result.check_returncode()
+            except (OSError, subprocess.CalledProcessError) as error:
+                cleanup_errors.append(error)
+        if cleanup_errors:
+            if not unwinding:
+                raise cleanup_errors[0]
+            print(f"Owned QA cleanup needs attention: {project}: {cleanup_errors}", file=sys.stderr)
 
 
 def assert_old_data(old, new):
@@ -214,6 +250,11 @@ def test_real_docker_migration_preserves_old_rows_json_private_files_and_env(qa)
     }
     assert "question-images/picture.webp" in current["files"]
     assert "images/qa.png" in current["files"]
+    assert len(current["tables"]["audio_answers"]["rows"]) == 2
+    assert len(current["tables"]["evaluations"]["rows"]) == 1
+    assert len(current["tables"]["transcription_requests"]["rows"]) == 1
+    assert "answer-audio/" + "f" * 32 + ".wav" in current["files"]
+    assert "answer-audio/" + "e" * 32 + ".part" in current["files"]
     archive = module.cold_backup(module.private_backups(), os.environ.copy())
     command_image(
         AFTER,
@@ -254,6 +295,7 @@ def upgrade():
   raise RuntimeError('Intentional isolated QA migration failure')
 def downgrade():raise RuntimeError('Restore backup')
 """)
+    (bad_context / "failure.py").chmod(0o644)
     bad_image = f"learning-qa-bad:{uuid.uuid4().hex[:12]}"
     config["services"]["app"].update(image=bad_image, build={"context": str(bad_context)})
     (root / "compose.yaml").write_text(json.dumps(config))
@@ -318,6 +360,8 @@ def test_actual_compose_flags_reach_runtime_settings(tmp_path, enabled):
             "--rm",
             "--network",
             "none",
+            "--label",
+            "traefik.enable=false",
             *args,
             "--entrypoint",
             "python",
@@ -354,7 +398,13 @@ for extension,codec in [('wav','pcm_s16le'),('mp4','aac'),('webm','libopus'),('o
  result.normalized_path.unlink();path.unlink()
 print('non-root runtime codecs: WAV MP4 WebM Ogg passed')
 """
-    assert "WAV MP4 WebM Ogg passed" in docker(
+    fixture = json.loads((SOURCE / "tests/fixtures/word-count-v1.json").read_text())
+    script += "\nfrom app.free_responses import count_words\nimport sys\n"
+    script += "assert sys.version_info[:2] == (3, 13)\n"
+    script += "fixture=" + repr(fixture) + "\n"
+    script += "assert all(count_words(row['text']) == row['count'] for row in fixture['cases'])\n"
+    script += "print('Python',sys.version.split()[0], 'Unicode',fixture['unicode_category_version'],len(fixture['cases']),'shared fixtures passed')\n"
+    output = docker(
         "run",
         "--rm",
         "--network",
@@ -367,3 +417,6 @@ print('non-root runtime codecs: WAV MP4 WebM Ogg passed')
         "-c",
         script,
     )
+    assert "WAV MP4 WebM Ogg passed" in output
+    assert "Unicode 15.1.0 23 shared fixtures passed" in output
+    print(output)

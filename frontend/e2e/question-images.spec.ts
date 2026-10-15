@@ -291,9 +291,15 @@ test("private upload drafts, immutable study/repeat images and final reference c
       () => document.documentElement.scrollWidth <= innerWidth
     )
   ).toBe(true)
-  expect(
-    (await page.request.get("/")).headers()["content-security-policy"]
-  ).not.toContain("blob:")
+  const policyHeaders = (await page.request.get("/")).headers()
+  const policy = policyHeaders["content-security-policy"]
+    .split(";")
+    .map((directive) => directive.trim())
+  expect(policy).toContain("img-src 'self' data:")
+  expect(policy).toContain("connect-src 'self'")
+  expect(policy.filter((directive) => directive.includes("blob:"))).toEqual([
+    "media-src 'self' blob:",
+  ])
   expect(errors).toEqual([])
   await page.request.post("/api/study/delete", {
     headers,

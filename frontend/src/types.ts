@@ -76,6 +76,8 @@ export type FreeResponseEvaluation = EvaluationFeedback & {
   reason: string | null
 }
 export type EvaluationGrade = EvaluationFeedback & {
+  input_method?: "text" | "voice"
+  voice?: VoiceMetadata | null
   score: number
   correct: boolean
   word_count: number
@@ -353,7 +355,7 @@ export type EvaluationState = {
   evaluation_id: number
   job_id: number
   status: "queued" | "running" | "failed" | "unknown" | "completed"
-  submission?: { free_text: string; audio_answer_id: null }
+  submission?: { free_text: string; audio_answer_id: string | null }
   error?: string | null
   error_code?: string | null
   feedback?: Feedback & EvaluationGrade

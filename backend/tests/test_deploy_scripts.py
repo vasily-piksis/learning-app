@@ -210,3 +210,82 @@ def test_start_never_opens_migrated_volume_with_old_image_without_restoring_back
         i for i, e in enumerate(events) if e[:2] == ["docker", "compose"] and "up" in e
     )
     assert restored < old_start
+
+
+@pytest.mark.parametrize("stage", ["initialize", "start"])
+@pytest.mark.parametrize("cleanup_status", [0, 1])
+def test_docker_qa_partial_setup_cleanup_preserves_original_error(
+    tmp_path, monkeypatch, stage, cleanup_status
+):
+    from types import SimpleNamespace
+
+    import test_migration_rollback as qa_module
+
+    calls = []
+    failure = RuntimeError("original isolated QA setup failure")
+
+    def fail_at(name):
+        def action(*args, **kwargs):
+            if stage == name:
+                raise failure
+
+        return action
+
+    def cleanup(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, cleanup_status, stdout=b"", stderr=b"cleanup")
+
+    monkeypatch.setattr(qa_module, "docker", lambda *args: calls.append(["docker", *args]))
+    monkeypatch.setattr(qa_module, "command_image", fail_at("initialize"))
+    monkeypatch.setattr(qa_module, "load_deploy", lambda: SimpleNamespace(run=fail_at("start")))
+    monkeypatch.setattr(qa_module.subprocess, "run", cleanup)
+    generator = qa_module.qa.__wrapped__(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError) as caught:
+        next(generator)
+    assert caught.value is failure
+    assert any(args[:3] == ["docker", "compose", "down"] for args in calls)
+    assert any(args[:3] == ["docker", "volume", "rm"] for args in calls)
+
+
+def test_operator_restore_streams_private_archive_without_bind_mount(tmp_path, monkeypatch):
+    import sys
+
+    module = load_deploy()
+    archive = tmp_path / "cold.tar.gz"
+    archive.write_bytes(b"private QA backup bytes")
+    archive.chmod(0o600)
+    calls = []
+
+    def transport(command, **kwargs):
+        calls.append(command)
+        assert "-i" in command and command[-1] == "-"
+        assert "--user" not in command and "traefik.enable=false" in command
+        assert command.count("--mount") == 1
+        assert not any("type=bind" in part for part in command)
+        assert kwargs["stdin"].readable()
+        assert archive.stat().st_mode & 0o777 == 0o600
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; assert sys.stdin.buffer.read()==b'private QA backup bytes'",
+            ],
+            stdin=kwargs["stdin"],
+            check=True,
+        )
+
+    monkeypatch.setattr(module, "run", transport)
+    module.restore_backup(archive, "owned-qa-volume", "old-nonroot-image")
+    assert len(calls) == 1 and archive.stat().st_mode & 0o777 == 0o600
+
+
+def test_operator_run_defaults_to_closed_stdin_and_accepts_explicit_stream(monkeypatch, tmp_path):
+    module = load_deploy()
+    streams = []
+    monkeypatch.setattr(
+        module.subprocess, "run", lambda *args, **kwargs: streams.append(kwargs["stdin"])
+    )
+    module.run(["docker", "version"])
+    with (tmp_path / "archive").open("w+b") as stream:
+        module.run(["docker", "run", "-i"], stdin=stream)
+        assert streams == [subprocess.DEVNULL, stream]

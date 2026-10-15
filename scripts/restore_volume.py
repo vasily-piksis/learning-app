@@ -39,6 +39,9 @@ def restore(archive: Path, destination: Path):
                     if target.stat().st_size != member.size:
                         raise ValueError("Incomplete backup file")
                 permissions.append((target, member.mode & 0o777, member.mtime))
+            # Tar can stop at its end marker before gzip validates the final CRC/footer.
+            while backup.fileobj.read(1024 * 1024):
+                pass
         if not (stage / "learning.sqlite3").is_file():
             raise ValueError("Backup has no application database")
         for target, mode, modified in reversed(permissions):
@@ -53,5 +56,16 @@ def restore(archive: Path, destination: Path):
             shutil.move(str(child), destination / child.name)
 
 
+def main():
+    if sys.argv[1] == "-":
+        # A seekable private copy preserves staged validation without a host UID dependency.
+        with tempfile.NamedTemporaryFile(prefix="learning-backup-", suffix=".tar.gz") as archive:
+            shutil.copyfileobj(sys.stdin.buffer, archive)
+            archive.flush()
+            restore(Path(archive.name), Path("/data"))
+    else:
+        restore(Path(sys.argv[1]), Path("/data"))
+
+
 if __name__ == "__main__":
-    restore(Path(sys.argv[1]), Path("/data"))
+    main()

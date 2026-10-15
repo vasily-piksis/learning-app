@@ -153,6 +153,12 @@ def test_edited_transcript_authoritative_grading(client, app, monkeypatch):
             "was_edited": True,
         }
 
+    status = client.get(f"/api/study/{session}/evaluations?position=0").json()
+    history = client.get(f"/api/study/{session}").json()["review"][0]
+    assert status["feedback"]["voice"] == grade["voice"]
+    assert history["voice"] == grade["voice"]
+    assert history["input_method"] == "voice"
+
 
 def test_family_quota_concurrent_round_up_no_refund(client, app, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor

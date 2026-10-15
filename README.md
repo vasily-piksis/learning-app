@@ -367,6 +367,24 @@ remains available when transcription is disabled. Host tests require ffmpeg/ffpr
 CI installs them explicitly and the Docker runtime includes both while running as
 UID 10001.
 
+Choose **Write** or **Tell** on a free response. Recording starts only after pressing
+**Record** on HTTPS (localhost also works for development). **Stop recording** leaves
+an entirely local preview: listen, record again or delete it before choosing
+**Transcribe (paid)**. Review/edit the transcript, then independently choose
+**Grade with AI (paid)**. No live word count is shown during recording; the counter
+appears for the transcript. Unsupported MIME formats or denied microphone access
+leave Write available. The recorder checks supported WebM/MP4/Ogg/WAV formats and
+stops after 180 seconds; leaving the tab or exercise releases microphone tracks and
+local blob URLs. Reload reads owned transcript/job state without paid retries.
+An uncertain acknowledgement retains the same operation key; use Check transcription
+again to recover it. A new paid retry requires its own cost acknowledgement.
+
+Automated browser QA uses Chromium's fake microphone and controlled WebKit MP4/
+permission fixtures. Physical iOS Safari microphone, HTTPS recording and upload
+have **not** been verified on hardware; controlled WebKit is not a hardware claim.
+No paid production-provider calls are part of these tests. CSP adds only
+`media-src 'self' blob:` for private/local playback.
+
 Uploads are limited to 15 MiB and 180 seconds of actual decoded samples. MP4, WebM,
 Ogg and WAV audio are normalized to mono 16 kHz WAV. Video, external references,
 playlists, corrupt media and nonfinite durations are rejected. Missing container

@@ -132,9 +132,7 @@ def grading_data(attempt):
     if grading.get("version") == 2:
         from .free_responses import StoredEvaluationGrade
 
-        return StoredEvaluationGrade.model_validate(grading).model_dump(
-            exclude={"version", "voice"}
-        )
+        return StoredEvaluationGrade.model_validate(grading).model_dump(exclude={"version"})
     if grading and grading.get("version") != 1:
         raise ValueError("Неизвестная версия оценки")
     return {"parts": grading.get("parts", []), "message_code": grading.get("message_code")}

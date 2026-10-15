@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import uvicorn
-from app import downsub, evaluations, image_generation
+from app import answer_audio, downsub, evaluations, image_generation
 from app.cli import create_user
 from app.config import Settings
 from app.main import create_app
@@ -289,6 +289,76 @@ class BrowserEvaluationAI:
         )
 
 
+class BrowserTranscriber:
+    def __init__(self, settings):
+        pass
+
+    def transcribe(self, audio, language):
+        import time
+
+        from app.transcription import Transcript
+
+        assert audio.normalized_path.read_bytes().startswith(b"RIFF")
+        time.sleep(5)
+        return Transcript("A green tree grows here.", ["en"])
+
+
+def seed_voice(db):
+    from app.models import Card, CardSource, Document, SourcePage, Subject, Topic
+
+    with db.session() as session:
+        subject = Subject(name="Voice browser fixtures")
+        session.add(subject)
+        session.flush()
+        topic = Topic(subject_id=subject.id, name="Voice QA")
+        session.add(topic)
+        session.flush()
+        document = Document(
+            topic_id=topic.id,
+            name="Tree",
+            filename="voice.txt",
+            mime="text/plain",
+            size=24,
+            sha256="c" * 64,
+            page_count=1,
+            status="ready",
+        )
+        session.add(document)
+        session.flush()
+        page = SourcePage(
+            document_id=document.id, number=1, text="A green tree grows here.", language="en-GB"
+        )
+        session.add(page)
+        session.flush()
+        ref = {"document_id": document.id, "page": 1}
+        exercise = {
+            "goal": "language",
+            "language": "en-GB",
+            "level": "A1",
+            "min_words": None,
+            "max_words": None,
+            "model_answer": "A green tree grows here.",
+            "rubric": [{"id": "clarity", "label": "Clarity", "weight": 100}],
+            "expected_points": [
+                {"id": "tree", "text": "A tree", "essential": True, "sources": [ref]}
+            ],
+            "source_fragments": [{"source": ref, "text": page.text}],
+        }
+        card = Card(
+            topic_id=topic.id,
+            question="Describe the tree",
+            answer=exercise["model_answer"],
+            mode="quiz",
+            question_type="free_response",
+            exercise=exercise,
+            language="en-GB",
+            status="saved",
+        )
+        session.add(card)
+        session.flush()
+        session.add(CardSource(card_id=card.id, page_id=page.id))
+
+
 def browser_app():
     port = int(os.environ.get("E2E_PORT", "18940"))
     settings = Settings(
@@ -298,6 +368,7 @@ def browser_app():
         cookie_secure=False,
         openai_api_key="browser-fixture-only",
         free_response_enabled=True,
+        transcription_enabled=True,
         picture_description_enabled=True,
         openai_vision_enabled=True,
         image_generation_enabled=True,
@@ -306,6 +377,7 @@ def browser_app():
         youtube_provider="downsub",
         frontend_dir=Path("frontend/dist"),
     )
+    answer_audio.Transcriber = BrowserTranscriber
     evaluations.EvaluationAI = BrowserEvaluationAI
     downsub.request = subtitle_boundary
     image_generation.ImageGenerator = BrowserImageGenerator
@@ -314,6 +386,7 @@ def browser_app():
     instance = create_app(settings, ai=fixture_ai)
     create_user(instance.state.db, "child", "Browser Child", "browser-child-password")
     create_user(instance.state.db, "parent", "Browser Parent", "browser-parent-password")
+    seed_voice(instance.state.db)
     for device in ("desktop", "mobile"):
         create_user(
             instance.state.db, f"profile_{device}", "Browser Profile", "browser-profile-password"
