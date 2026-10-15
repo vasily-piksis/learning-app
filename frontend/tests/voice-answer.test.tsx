@@ -200,6 +200,61 @@ test("unsupported MIME never requests microphone", async () => {
   await screen.findByText(/Microphone unavailable/)
   expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
 })
+test.each(["hide", "switch", "unmount"])(
+  "deferred recording deletion after %s never requests microphone",
+  async (cancel) => {
+    const view = setup(audio)
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Record again" })).toBeEnabled()
+    )
+    let resolveDelete!: (response: Response) => void
+    const deleted = vi.fn()
+    vi.mocked(fetch).mockImplementation(async (_url, init) => {
+      if (init?.method === "DELETE") {
+        deleted()
+        return new Promise<Response>((resolve) => {
+          resolveDelete = resolve
+        })
+      }
+      return new Response(
+        JSON.stringify({ available: true, reason: null, audio_answer: audio })
+      )
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Record again" }))
+    await waitFor(() => expect(deleted).toHaveBeenCalledOnce())
+    try {
+      if (cancel === "hide") {
+        Object.defineProperty(document, "visibilityState", {
+          configurable: true,
+          value: "hidden",
+        })
+        fireEvent(document, new Event("visibilitychange"))
+      } else if (cancel === "switch") {
+        view.rerender(
+          <VoiceAnswer
+            sessionId={8}
+            position={0}
+            language="en-GB"
+            visible={false}
+            disabled={false}
+            onTranscript={view.transcript}
+          />
+        )
+      } else {
+        view.unmount()
+      }
+      await act(async () => {
+        resolveDelete(new Response(JSON.stringify({ discarded: true })))
+      })
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: "visible",
+      })
+    }
+  }
+)
 test("microphone permission resolving after unmount releases every track", async () => {
   let resolve!: (value: MediaStream) => void
   vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValue(
@@ -282,14 +337,45 @@ test("one-sided word targets are readable in every interface language", async ()
 test("malformed voice metadata cannot release grading request", async () => {
   const { isEvaluationFeedback } =
     await import("../src/features/exercises/FreeResponse")
+  const feedback = {
+    session_id: 8,
+    position: 0,
+    next_position: 1,
+    evaluation_id: 9,
+    card: {
+      id: 1,
+      question: "Describe the tree",
+      question_type: "free_response",
+      sources: [],
+      exercise: {
+        model_answer: "A green tree.",
+        rubric: [{ id: "r", label: "Clarity", weight: 100 }],
+        expected_points: [{ id: "p", text: "Tree", essential: true }],
+      },
+    },
+    input_method: "voice",
+    voice: {
+      original_transcript: "A green tree.",
+      original_word_count: 3,
+      was_edited: true,
+    },
+    correct: true,
+    score: 100,
+    word_count: 4,
+    word_count_version: 1,
+    word_limit: { min: null, max: null, met: true },
+    language_match: true,
+    rubric_scores: [{ criterion_id: "r", score: 4, explanation: "Clear" }],
+    point_checks: [{ point_id: "p", met: true, evidence: [] }],
+    corrections: [],
+    summary: "Clear description",
+    suggestions: [],
+  }
+  expect(isEvaluationFeedback(feedback)).toBe(true)
   expect(
     isEvaluationFeedback({
-      input_method: "voice",
-      voice: {
-        original_transcript: {},
-        original_word_count: 3,
-        was_edited: true,
-      },
+      ...feedback,
+      voice: { ...feedback.voice, original_transcript: {} },
     })
   ).toBe(false)
 })

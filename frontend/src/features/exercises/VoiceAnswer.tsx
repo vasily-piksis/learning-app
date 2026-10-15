@@ -271,6 +271,12 @@ export default function VoiceAnswer({
         applied.current = ""
         callback.current(null)
       }
+      if (
+        !alive.current ||
+        token !== generation.current ||
+        document.visibilityState !== "visible"
+      )
+        return
       const media = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: false,
