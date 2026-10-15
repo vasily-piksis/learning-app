@@ -247,7 +247,21 @@ def test_deleted_source_and_changed_candidate_rejected_before_model(client, app,
     assert response.status_code == 409
 
 
-def test_picture_evaluation_completion_repeat_and_context_cleanup(client, app, monkeypatch):
+@pytest.mark.parametrize(
+    "unavailable",
+    [
+        None,
+        "picture_description_enabled",
+        "openai_vision_enabled",
+        "openai_api_key",
+        "openai_model",
+        "free_response_daily_request_limit",
+        "budget_timezone",
+    ],
+)
+def test_picture_evaluation_completion_repeat_and_context_cleanup(
+    client, app, monkeypatch, unavailable
+):
     import app.evaluations as evaluations
     from app.free_responses import FreeResponseEvaluation
     from app.jobs import run_job
@@ -303,6 +317,11 @@ def test_picture_evaluation_completion_repeat_and_context_cleanup(client, app, m
     assert result["review"][0]["score"] == 50
     with app.state.db.session() as db:
         assert not list(db.scalars(select(JobImage).where(JobImage.job_id == pending["job_id"])))
+    if unavailable:
+        from test_evaluation_history import assert_unavailable_repeat
+
+        assert_unavailable_repeat(client, app, session["id"], unavailable)
+        return
     repeat = client.post(f"/api/study/{session['id']}/repeat", json={})
     assert repeat.status_code == 200, repeat.text
     with app.state.db.session() as db:

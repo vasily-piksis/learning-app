@@ -522,6 +522,11 @@ def repeat(identifier: int, request: Request):
         )
         if not cards:
             raise HTTPException(422, "Пока нет карточек для повторения")
+        from .evaluations import require_available
+
+        kinds = {card.snapshot.get("question_type") for card in cards}
+        for kind in kinds & {"free_response", "picture_description"}:
+            require_available(request.app.state.settings, kind)
         return new_session(
             db,
             user.id,

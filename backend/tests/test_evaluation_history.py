@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from app.jobs import run_job
 from app.models import Attempt, Job, SessionCard
 from sqlalchemy import func, select
@@ -83,8 +84,19 @@ def test_completed_history_keeps_v2_null_limits_without_regrading(client, app, m
     assert item["submission"] == {"free_text": "Tai yra medis", "audio_answer_id": None}
 
 
+@pytest.mark.parametrize(
+    "unavailable",
+    [
+        None,
+        "free_response_enabled",
+        "openai_api_key",
+        "openai_model",
+        "free_response_daily_request_limit",
+        "budget_timezone",
+    ],
+)
 def test_library_deletion_preserves_active_evidence_repeat_and_session_images(
-    client, app, monkeypatch
+    client, app, monkeypatch, unavailable
 ):
     import httpx
     from app.models import Card, CardImage, ImageAsset, SessionImage
@@ -127,6 +139,9 @@ def test_library_deletion_preserves_active_evidence_repeat_and_session_images(
         run_job(app.state.db, app.state.ai, pending["job_id"])
     review = client.get(f"/api/study/{session}").json()["review"][0]
     assert review["correct"] is False
+    if unavailable:
+        assert_unavailable_repeat(client, app, session, unavailable)
+        return
     repeated = client.post(f"/api/study/{session}/repeat")
     assert repeated.status_code == 200, repeated.text
     from app.models import Evaluation
@@ -193,3 +208,32 @@ def test_delete_during_provider_retry_prevents_next_send_and_no_revival(
         assert db.scalar(select(func.count(Evaluation.id))) == 0
         assert db.get(Job, pending["job_id"]).status == "deleted"
     assert retry_waits == [1]
+
+
+def assert_unavailable_repeat(client, app, session, setting):
+    from app.models import Base
+
+    def counts():
+        with app.state.db.session() as db:
+            return {
+                table.name: db.scalar(select(func.count()).select_from(table))
+                for table in Base.metadata.sorted_tables
+            }
+
+    before = counts()
+    history = client.get(f"/api/study/{session}").json()
+    value = (
+        False
+        if setting.endswith("enabled")
+        else 0
+        if setting.endswith("limit")
+        else "unknown/timezone"
+        if setting == "budget_timezone"
+        else ""
+    )
+    setattr(app.state.settings, setting, value)
+    response = client.post(f"/api/study/{session}/repeat")
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "runtime_unavailable"
+    assert counts() == before  # No session/image/job/evaluation/reservation rows created.
+    assert client.get(f"/api/study/{session}").json() == history
