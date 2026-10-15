@@ -1,4 +1,5 @@
 import httpx
+import pytest
 from app.jobs import run_job
 from openai import OpenAI
 from sqlalchemy import select
@@ -278,3 +279,64 @@ def test_quota_is_shared_between_family_users(client, app, monkeypatch):
             parent.get(f"/api/audio-answers/{second['audio_answer_id']}").json()["error_code"]
             == "quota_exceeded"
         )
+
+
+@pytest.mark.parametrize("failure", ["failed", "unknown"])
+def test_failed_upload_deduplication_cannot_authorize_paid_retry(client, app, monkeypatch, failure):
+    from app.models import AudioAnswer, Job, TranscriptionRequest
+    from test_answer_audio import wav_bytes
+
+    session = setup_audio(client, app)
+    original = upload(client, session, key="original").json()
+    sends = []
+
+    def response(request):
+        sends.append(request)
+        if failure == "unknown":
+            raise httpx.ReadTimeout("uncertain", request=request)
+        return httpx.Response(400, json={"error": {"message": "failed"}})
+
+    with install_transcriber(monkeypatch, app, response):
+        run_job(app.state.db, None, original["job_id"])
+        alias = upload(client, session, key="upload-alias")
+        assert alias.status_code == 202, alias.text
+        assert alias.json()["audio_answer_id"] == original["audio_answer_id"]
+        assert alias.json()["job_id"] == original["job_id"]
+        assert alias.json()["status"] == failure
+        assert upload(client, session, key="upload-alias").json() == alias.json()
+        assert upload(client, session, wav_bytes(0.3), key="upload-alias").status_code == 409
+        run_job(app.state.db, None, original["job_id"])
+        retry_url = f"/api/audio-answers/{original['audio_answer_id']}/retry"
+        assert (
+            client.post(
+                retry_url, json={"idempotency_key": "upload-alias", "acknowledge_extra_cost": True}
+            ).status_code
+            == 409
+        )
+        with app.state.db.session() as db:
+            audio = db.get(AudioAnswer, original["audio_answer_id"])
+            assert audio.status == failure and audio.revision == 1
+            assert db.get(Job, original["job_id"]).payload["request_key"] == "original"
+            assert len(list(db.scalars(select(TranscriptionRequest)))) == 1
+        assert len(sends) == 1
+        # Only a fresh, explicit acknowledged retry changes the current paid request key.
+        assert (
+            client.post(
+                retry_url, json={"idempotency_key": "paid-retry", "acknowledge_extra_cost": True}
+            ).status_code
+            == 202
+        )
+        assert upload(client, session, key="another-upload-alias").status_code == 202
+        assert (
+            client.post(
+                retry_url, json={"idempotency_key": "paid-retry", "acknowledge_extra_cost": True}
+            ).status_code
+            == 202
+        )
+        run_job(app.state.db, None, original["job_id"])
+    assert len(sends) == 2
+    with app.state.db.session() as db:
+        audio = db.get(AudioAnswer, original["audio_answer_id"])
+        assert audio.request_key == "original" and audio.revision == 2
+        assert db.get(Job, original["job_id"]).payload["request_key"] == "paid-retry"
+        assert len(list(db.scalars(select(TranscriptionRequest)))) == 2

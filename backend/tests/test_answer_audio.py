@@ -343,3 +343,40 @@ def test_unknown_metadata_marker_still_uses_actual_samples(tmp_path, monkeypatch
 
     monkeypatch.setattr(module.subprocess, "run", unknown)
     assert module.validate_audio(source).duration == 0.2
+
+
+def test_same_bytes_new_upload_keys_bind_durable_aliases(client, app):
+    from app.models import AudioAnswer, Job
+
+    session = setup_audio(client, app)
+    original = upload(client, session, key="original").json()
+    with ThreadPoolExecutor(2) as pool:
+        aliases = list(
+            pool.map(lambda key: upload(client, session, key=key), ["alias-a", "alias-b"])
+        )
+    assert [response.status_code for response in aliases] == [202, 202]
+    assert all(response.json() == original for response in aliases)
+    assert upload(client, session, key="alias-a").json() == original
+    assert upload(client, session, wav_bytes(0.3), key="alias-a").status_code == 409
+    with app.state.db.session() as db:
+        rows = list(db.scalars(select(AudioAnswer)))
+        assert len(rows) == 1
+        assert set(rows[0].request_keys) == {"original", "alias-a", "alias-b"}
+        assert rows[0].request_key == "original" and rows[0].revision == 1
+        jobs = list(db.scalars(select(Job).where(Job.kind == "transcribe_answer")))
+        assert len(jobs) == 1 and jobs[0].payload["request_key"] == "original"
+    assert len(list((app.state.settings.data_dir / "answer-audio").iterdir())) == 1
+
+
+def test_upload_alias_bound_elsewhere_is_never_reused(client, app):
+    first = setup_audio(client, app)
+    original = upload(client, first, key="first").json()
+    assert upload(client, first, key="bound-alias").status_code == 202
+    second = setup_audio(client, app)
+    assert upload(client, second, key="bound-alias").status_code == 409
+    current = upload(client, second, key="second").json()
+    assert current["audio_answer_id"] != original["audio_answer_id"]
+    assert upload(client, second, key="first").status_code == 409
+    assert upload(client, second, key="bound-alias").status_code == 409
+    assert upload(client, first, key="second").status_code == 409
+    assert upload(client, first, wav_bytes(0.3), key="bound-alias").status_code == 409

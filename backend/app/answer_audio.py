@@ -300,6 +300,22 @@ def key_used(db, user_id, key):
     )
 
 
+def replay_upload(db, card_id, user_id, key, digest):
+    """Under the write claim, bind an upload alias without authorizing a paid send."""
+    previous = current_audio(db, card_id)
+    if previous:
+        if previous.user_id != user_id or previous.sha256 != digest:
+            raise HTTPException(409, "Сначала удалите предыдущую запись")
+        if key not in previous.request_keys:
+            if key_used(db, user_id, key) or len(previous.request_keys) >= 100:
+                raise HTTPException(409, "Идентификатор уже использован или достигнут лимит")
+            previous.request_keys = [*previous.request_keys, key]
+        return previous
+    if key_used(db, user_id, key):
+        raise HTTPException(409, "Идентификатор уже использован")
+    return None
+
+
 @router.get("/study/{identifier}/audio")
 def lookup(identifier: int, position: int, request: Request):
     from .study import at_position, owned
@@ -347,18 +363,12 @@ def upload(
         digest = hashlib.sha256(incoming.read_bytes()).hexdigest()
         # Bind idempotency to original bytes, including container metadata.
         with database.session() as db:
-            previous = db.scalar(
-                select(AudioAnswer).where(
-                    AudioAnswer.user_id == user.id, AudioAnswer.request_key == idempotency_key
-                )
-            )
+            db.execute(text("BEGIN IMMEDIATE"))
+            session = owned(db, identifier, user.id)
+            card = at_position(db, identifier, position)
+            ensure_active(db, session, card)
+            previous = replay_upload(db, card.id, user.id, idempotency_key, digest)
             if previous:
-                if (
-                    previous.session_card_id != card.id
-                    or previous.sha256 != digest
-                    or previous.status in {"discarded", "deleted"}
-                ):
-                    raise HTTPException(409, "Идентификатор уже использован")
                 return JSONResponse(audio_data(previous), status_code=202)
         require_available(database.settings)
         validated = validate_audio(incoming)
@@ -376,13 +386,9 @@ def upload(
             card = at_position(db, identifier, position)
             ensure_active(db, session, card)
             require_available(database.settings)
-            previous = current_audio(db, card.id)
+            previous = replay_upload(db, card.id, user.id, idempotency_key, digest)
             if previous:
-                if previous.request_key == idempotency_key and previous.sha256 == digest:
-                    return JSONResponse(audio_data(previous), status_code=202)
-                raise HTTPException(409, "Сначала удалите предыдущую запись")
-            if key_used(db, user.id, idempotency_key):
-                raise HTTPException(409, "Идентификатор уже использован")
+                return JSONResponse(audio_data(previous), status_code=202)
             identifier_audio = uuid.uuid4().hex
             job = Job(
                 user_id=user.id,
