@@ -403,3 +403,118 @@ test("an assignment meeting the criteria has an explicit completed status", asyn
   )
   expect(await screen.findByText("Assignment completed")).toBeVisible()
 })
+
+test.each([
+  ["null source", { ...feedback, card: { ...card, sources: [null] } }],
+  [
+    "source name",
+    {
+      ...feedback,
+      card: { ...card, sources: [{ document_id: 1, page: 1, name: {} }] },
+    },
+  ],
+  [
+    "source URL",
+    {
+      ...feedback,
+      card: { ...card, sources: [{ document_id: 1, page: 1, url: [] }] },
+    },
+  ],
+  [
+    "source timestamp",
+    {
+      ...feedback,
+      card: {
+        ...card,
+        sources: [{ document_id: 1, page: 1, start_seconds: [] }],
+      },
+    },
+  ],
+  [
+    "answer object",
+    { ...feedback, card: { ...card, answer: { text: "Medis" } } },
+  ],
+  [
+    "answer image",
+    {
+      ...feedback,
+      card: { ...card, images: { answer: { url: "/image", alt: {} } } },
+    },
+  ],
+  [
+    "question image",
+    { ...feedback, card: { ...card, images: { question: "invalid" } } },
+  ],
+  ["array status", { evaluation_id: 9, job_id: 10, status: ["queued"] }],
+])(
+  "malformed %s preserves the paid request across reload and identical manual replay",
+  async (_, response) => {
+    const requests = server(response)
+    const view = render(<Study id={8} />)
+    const input = await screen.findByLabelText("Your written response")
+    await waitFor(() => expect(input).toBeEnabled())
+    fireEvent.change(input, { target: { value: "Ąžuolas" } })
+    await userEvent.click(
+      screen.getByRole("button", { name: "Grade with AI (paid)" })
+    )
+    await screen.findByRole("button", { name: "Check submission again" })
+    const frozen = sessionStorage.getItem("free-response-v1:8:0")
+    expect(frozen).not.toBeNull()
+    expect(screen.getByLabelText("Your written response")).toHaveValue(
+      "Ąžuolas"
+    )
+    expect(screen.getByLabelText("Your written response")).toBeDisabled()
+    expect(screen.queryByText("Score: 75/100")).not.toBeInTheDocument()
+    view.unmount()
+    render(<Study id={8} />)
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Check submission again" })
+    )
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toEqual(requests[0])
+    expect(sessionStorage.getItem("free-response-v1:8:0")).toBe(frozen)
+  }
+)
+
+test("completed feedback preserves valid optional legacy sources and private image metadata", async () => {
+  const { isEvaluationFeedback } =
+    await import("../src/features/exercises/FreeResponse")
+  expect(isEvaluationFeedback(feedback)).toBe(true)
+  expect(
+    isEvaluationFeedback({
+      ...feedback,
+      card: {
+        ...card,
+        answer: "Medis",
+        sources: [
+          { document_id: 1, page: 1 },
+          {
+            document_id: 2,
+            page: 3,
+            available: false,
+            name: "Deleted material",
+          },
+          {
+            document_id: 3,
+            page: 1,
+            url: "https://www.youtube.com/watch?v=LTfree12345&t=5",
+            name: "LT",
+            start_seconds: 5.5,
+            end_seconds: null,
+          },
+        ],
+        images: {
+          answer: {
+            asset_id: "asset",
+            url: "/api/private-image",
+            alt: "Ąžuolas",
+            width: 100,
+            height: 100,
+            mime: "image/png",
+            origin: "upload",
+          },
+        },
+      },
+    })
+  ).toBe(true)
+})

@@ -32,6 +32,46 @@ type Frozen = {
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value)
 const integer = (value: unknown) => Number.isSafeInteger(value)
+// These fields reach Sources and ExerciseSolution after a paid response is accepted.
+// Reject malformed render data before clearing the persisted request key.
+function renderableSources(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (source) =>
+        object(source) &&
+        integer(source.document_id) &&
+        integer(source.page) &&
+        (source.available === undefined ||
+          typeof source.available === "boolean") &&
+        (source.name === undefined || typeof source.name === "string") &&
+        (source.url === undefined || typeof source.url === "string") &&
+        (source.start_seconds === undefined ||
+          (typeof source.start_seconds === "number" &&
+            Number.isFinite(source.start_seconds)))
+    )
+  )
+}
+function renderableImages(value: unknown) {
+  if (value === undefined) return true
+  return (
+    object(value) &&
+    [value.question, value.answer].every(
+      (image) =>
+        image === undefined ||
+        (object(image) &&
+          typeof image.asset_id === "string" &&
+          typeof image.url === "string" &&
+          typeof image.alt === "string" &&
+          typeof image.mime === "string" &&
+          integer(image.width) &&
+          Number(image.width) > 0 &&
+          integer(image.height) &&
+          Number(image.height) > 0 &&
+          (image.origin === "upload" || image.origin === "generated"))
+    )
+  )
+}
 export function isEvaluationFeedback(
   value: unknown
 ): value is Feedback & EvaluationGrade {
@@ -62,8 +102,12 @@ export function isEvaluationFeedback(
     integer(value.session_id) &&
     integer(value.position) &&
     integer(value.next_position) &&
+    integer(value.card.id) &&
     typeof value.card.question === "string" &&
-    Array.isArray(value.card.sources) &&
+    (value.card.answer === undefined ||
+      typeof value.card.answer === "string") &&
+    renderableSources(value.card.sources) &&
+    renderableImages(value.card.images) &&
     integer(value.score) &&
     Number(value.score) >= 0 &&
     Number(value.score) <= 100 &&
@@ -124,8 +168,9 @@ function isState(value: unknown, full: boolean): value is EvaluationState {
     Number(value.evaluation_id) > 0 &&
     integer(value.job_id) &&
     Number(value.job_id) > 0 &&
+    typeof value.status === "string" &&
     ["queued", "running", "failed", "unknown", "completed"].includes(
-      String(value.status)
+      value.status
     ) &&
     (!full ||
       (object(value.submission) &&
