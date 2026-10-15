@@ -10,7 +10,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-QuestionType = Literal["choice", "written", "gap", "ending", "matching", "ordering"]
+from .free_responses import FreeResponseExercise
+
+QuestionType = Literal[
+    "choice", "written", "gap", "ending", "matching", "ordering", "free_response"
+]
 QUESTION_TYPES = ("choice", "written", "gap", "ending", "matching", "ordering")
 
 
@@ -137,6 +141,7 @@ class OrderingExercise(Strict):
 
 
 SCHEMAS = {
+    "free_response": FreeResponseExercise,
     "written": WrittenExercise,
     "gap": GapExercise,
     "ending": EndingExercise,
@@ -156,6 +161,8 @@ def validate_exercise(question_type: QuestionType, value: dict | None) -> dict |
 
 
 def solution_text(question_type: QuestionType, exercise: dict) -> str:
+    if question_type == "free_response":
+        return exercise["model_answer"]
     if question_type == "written":
         return " / ".join(exercise["accepted_answers"])
     if question_type in {"gap", "ending"}:
@@ -252,6 +259,12 @@ def public_exercise(snapshot: dict, revealed: bool) -> dict:
     result["sources"] = [
         {k: v for k, v in s.items() if k != "text"} for s in result.get("sources", [])
     ]
+    kind, value = snapshot.get("question_type", "choice"), snapshot.get("exercise")
+    if kind == "free_response":
+        fields = {"goal", "level", "language", "min_words", "max_words"}
+        if revealed:
+            fields |= {"model_answer", "rubric", "expected_points"}
+        result["exercise"] = {key: copy.deepcopy(value[key]) for key in fields if key in value}
     if revealed:
         return result
     for key in ("answer", "correct_index", "correct_indices"):
@@ -276,6 +289,10 @@ class InvalidSubmission(ValueError):
     pass
 
 
+class RequiresEvaluation(ValueError):
+    """This answer must be evaluated against its frozen rubric."""
+
+
 @dataclass
 class GradeResult:
     correct: bool
@@ -285,6 +302,24 @@ class GradeResult:
 
 def canonical_submission(snapshot: dict, submission: dict) -> dict:
     kind, value = snapshot.get("question_type", "choice"), snapshot.get("exercise")
+    if "_grading" in submission:
+        raise InvalidSubmission("Служебная оценка не принимается от клиента")
+    if kind == "free_response":
+        from .free_responses import count_words
+
+        if snapshot.get("mode") != "quiz" or set(submission) not in (
+            {"free_text"},
+            {"free_text", "audio_answer_id"},
+        ):
+            raise InvalidSubmission("Ответ не соответствует типу задания")
+        text, audio_id = submission.get("free_text"), submission.get("audio_answer_id")
+        if not isinstance(text, str) or len(text) > 10000 or not 1 <= count_words(text) <= 2000:
+            raise InvalidSubmission("Напишите ответ до 10000 символов и 2000 слов")
+        if audio_id is not None and (
+            not isinstance(audio_id, str) or not audio_id.strip() or len(audio_id) > 80
+        ):
+            raise InvalidSubmission("Недопустимый идентификатор аудио")
+        return {"free_text": text, "audio_answer_id": audio_id}
     data = {k: v for k, v in submission.items() if v is not None}
     if snapshot.get("mode") == "flashcard":
         if set(data) != {"remembered"} or type(data["remembered"]) is not bool:
@@ -357,6 +392,8 @@ def canonical_submission(snapshot: dict, submission: dict) -> dict:
 
 
 def grade_answer(snapshot: dict, submission: dict) -> GradeResult:
+    if snapshot.get("question_type") == "free_response":
+        raise RequiresEvaluation("Для этого задания нужна проверка по критериям")
     data = canonical_submission(snapshot, submission)
     if snapshot.get("mode") == "flashcard":
         return GradeResult(data["remembered"])

@@ -23,6 +23,7 @@ export const questionLabels: Record<QuestionType, string> = {
   ending: "Окончания",
   matching: "Пары",
   ordering: "Сборка предложения",
+  free_response: "Свободный ответ",
 }
 export function questionLabel(type: QuestionType = "choice") {
   return t(questionLabels[type])
@@ -61,6 +62,8 @@ export function exerciseSolution(
   value: FullExercise | null
 ): string {
   if (!value) return ""
+  if (type === "free_response" && "model_answer" in value)
+    return value.model_answer
   if (type === "written" && "accepted_answers" in value)
     return value.accepted_answers.join(" / ")
   if ((type === "gap" || type === "ending") && "segments" in value) {
@@ -101,6 +104,7 @@ export function methodLabel(method: string) {
 }
 export function submissionText(card: Card, value?: Feedback["submission"]) {
   if (!value) return ""
+  if ("free_text" in value) return value.free_text
   if ("text" in value) return value.text
   if ("gap_answers" in value) return Object.values(value.gap_answers).join("; ")
   if ("choices" in value)

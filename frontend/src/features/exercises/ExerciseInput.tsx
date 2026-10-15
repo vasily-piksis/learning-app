@@ -57,7 +57,10 @@ export default function ExerciseInput(props: InputProps) {
     ordering: OrderingExercise,
   }
   const kind = props.card.question_type
-  const Component = kind && kind !== "choice" ? renderers[kind] : null
+  const Component =
+    kind && kind !== "choice" && kind !== "free_response"
+      ? renderers[kind]
+      : null
   return (
     <div className="flex flex-col gap-4">
       {Component && <Component {...props} />}

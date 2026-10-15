@@ -1,5 +1,87 @@
 export type QuestionType =
-  "choice" | "written" | "gap" | "ending" | "matching" | "ordering"
+  | "choice"
+  | "written"
+  | "gap"
+  | "ending"
+  | "matching"
+  | "ordering"
+  | "free_response"
+export type FreeResponseGoal = "content" | "language"
+export type FreeResponseLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
+export type FreeResponseSourceRef = { document_id: number; page: number }
+export type RubricCriterion = { id: string; label: string; weight: number }
+export type ExpectedPoint = {
+  id: string
+  text: string
+  essential: boolean
+  sources: FreeResponseSourceRef[]
+}
+export type FreeResponseExercise = {
+  goal: FreeResponseGoal
+  language: string
+  level: FreeResponseLevel | null
+  min_words: number | null
+  max_words: number | null
+  model_answer: string
+  rubric: RubricCriterion[]
+  expected_points: ExpectedPoint[]
+  source_fragments: { source: FreeResponseSourceRef; text: string }[]
+}
+export type PublicFreeResponseExercise = Pick<
+  FreeResponseExercise,
+  "goal" | "language" | "level" | "min_words" | "max_words"
+>
+export type RubricScore = {
+  criterion_id: string
+  score: number
+  explanation: string
+}
+export type TextEvidence = {
+  kind: "text"
+  source: FreeResponseSourceRef
+  quote: string
+}
+export type PointCheck = {
+  point_id: string
+  met: boolean
+  evidence: TextEvidence[]
+}
+export type Correction = {
+  original: string
+  suggested: string
+  explanation: string
+}
+export type EvaluationFeedback = {
+  rubric_scores: RubricScore[]
+  point_checks: PointCheck[]
+  language_match: boolean
+  corrections: Correction[]
+  summary: string
+  suggestions: string[]
+}
+export type FreeResponseEvaluation = EvaluationFeedback & {
+  assessability: "assessable" | "insufficient_context"
+  reason: string | null
+}
+export type EvaluationGrade = EvaluationFeedback & {
+  score: number
+  correct: boolean
+  word_count: number
+  word_count_version: 1
+  word_limit: { min: number | null; max: number | null; met: boolean }
+}
+export type VoiceMetadata = {
+  original_transcript: string
+  original_word_count: number
+  was_edited: boolean
+}
+export type StoredEvaluationGrade = EvaluationGrade & {
+  version: 2
+  evaluation_id: number
+} & (
+    | { input_method: "text"; voice: null }
+    | { input_method: "voice"; voice: VoiceMetadata }
+  )
 export type GapExercise = {
   segments: ({ text: string } | { gap_id: string })[]
   gaps: { id: string; accepted_answers: string[] }[]
@@ -7,12 +89,14 @@ export type GapExercise = {
   accepted_combinations: string[][]
 }
 export type FullExercise =
+  | FreeResponseExercise
   | { accepted_answers: string[]; case_sensitive: boolean }
   | GapExercise
   | { pairs: { left: string; right: string }[] }
   | { tokens: string[]; accepted_orders: string[][] }
 export type ExerciseItem = { id: string; text: string }
 export type PublicExercise =
+  | PublicFreeResponseExercise
   | { case_sensitive: boolean }
   | {
       segments: GapExercise["segments"]
@@ -22,6 +106,7 @@ export type PublicExercise =
   | { left: ExerciseItem[]; right: ExerciseItem[] }
   | { tokens: ExerciseItem[] }
 export type ExerciseSubmission =
+  | { free_text: string; audio_answer_id?: string | null }
   | { text: string }
   | { gap_answers: Record<string, string> }
   | { pairs: { left_id: string; right_id: string }[] }

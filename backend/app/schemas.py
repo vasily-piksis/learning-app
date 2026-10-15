@@ -12,8 +12,16 @@ from .exercises import (
     solution_text,
     validate_exercise,
 )
+from .free_responses import FreeResponseExercise
 
-Exercise = WrittenExercise | GapExercise | EndingExercise | MatchingExercise | OrderingExercise
+Exercise = (
+    WrittenExercise
+    | GapExercise
+    | EndingExercise
+    | MatchingExercise
+    | OrderingExercise
+    | FreeResponseExercise
+)
 
 
 class NameBody(BaseModel):
