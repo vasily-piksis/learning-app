@@ -71,21 +71,26 @@ export default function PracticeSelector({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(["flashcard", ...questionTypes, "mixed"] as PracticeMethod[]).map(
-              (type) => (
-                <SelectItem key={type} value={type}>
-                  {methodLabel(type)}
-                  {type !== "mixed" ? ` · ${count(type)}` : ""}
-                </SelectItem>
-              )
-            )}
+            {(
+              [
+                "flashcard",
+                ...questionTypes,
+                "free_response",
+                "mixed",
+              ] as PracticeMethod[]
+            ).map((type) => (
+              <SelectItem key={type} value={type}>
+                {methodLabel(type)}
+                {type !== "mixed" ? ` · ${count(type)}` : ""}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </Field>
       {method === "mixed" && (
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-sm">{t("Типы вопросов")}</legend>
-          {questionTypes.map((kind) => (
+          {[...questionTypes, "free_response" as const].map((kind) => (
             <label className="flex items-center gap-3" key={kind}>
               <Checkbox
                 checked={selectedTypes.includes(kind)}

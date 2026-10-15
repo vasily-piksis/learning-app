@@ -1,3 +1,7 @@
+import FreeResponseSettings, {
+  validFreeSettings,
+} from "./exercises/FreeResponseSettings"
+import type { PublicFreeResponseExercise } from "@/types"
 import { t } from "@/i18n"
 import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -53,17 +57,34 @@ export default function Generation({
         : "content"
     ),
     [selectedTypes, setSelectedTypes] = useState<QuestionType[]>([
-      questionTypes.find((type) => type === initialMethod) || "choice",
+      [...questionTypes, "free_response" as const].find(
+        (type) => type === initialMethod
+      ) || "choice",
     ]),
     [goalNotice, setGoalNotice] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null)
+  const [freeSettings, setFreeSettings] = useState<PublicFreeResponseExercise>({
+    goal: "content",
+    language: "",
+    level: null,
+    min_words: null,
+    max_words: null,
+  })
+  const free = selectedTypes.includes("free_response")
+  const settings = {
+    ...freeSettings,
+    goal: practiceGoal,
+    level: practiceGoal === "language" ? freeSettings.level : null,
+  }
   const requestKey = useRef<{ signature: string; key: string } | null>(null)
   const mode = initialMethod === "flashcard" ? "flashcard" : "quiz"
   const allowedTypes =
     practiceGoal === "language"
-      ? questionTypes
-      : questionTypes.filter((type) => type !== "ending" && type !== "ordering")
+      ? [...questionTypes, "free_response" as const]
+      : [...questionTypes, "free_response" as const].filter(
+          (type) => type !== "ending" && type !== "ordering"
+        )
   const available =
     documents.data?.filter((document) => document.status === "ready") || []
   const newIds = available
@@ -84,6 +105,7 @@ export default function Generation({
         allow_partial: true,
         question_types: selectedTypes,
         practice_goal: practiceGoal,
+        ...(free ? { free_response_settings: settings } : {}),
       }
       const signature = JSON.stringify(body)
       if (requestKey.current?.signature !== signature)
@@ -244,7 +266,13 @@ export default function Generation({
                     disabled={busy}
                     className="flex-wrap"
                     onValueChange={(types) =>
-                      setSelectedTypes(types as QuestionType[])
+                      setSelectedTypes(
+                        types.includes("free_response") && !free
+                          ? ["free_response"]
+                          : (types.filter(
+                              (type) => type !== "free_response"
+                            ) as QuestionType[])
+                      )
                     }
                   >
                     {allowedTypes.map((type) => (
@@ -260,6 +288,13 @@ export default function Generation({
                   </FieldDescription>
                 </FieldSet>
               </>
+            )}
+            {free && (
+              <FreeResponseSettings
+                value={settings}
+                onChange={setFreeSettings}
+                disabled={busy}
+              />
             )}
             <p className="text-sm text-muted-foreground">
               {t("Вопросы будут на языке исходных материалов.")}
@@ -283,6 +318,7 @@ export default function Generation({
         <Button
           disabled={
             busy ||
+            (free && !validFreeSettings(settings)) ||
             !ids.length ||
             !selectedTypes.length ||
             count < selectedTypes.length ||

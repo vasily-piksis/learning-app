@@ -1,24 +1,98 @@
 {
   "version": 1,
   "cases": [
-    {"text": "", "count": 0},
-    {"text": "  \t\n", "count": 0},
-    {"text": "...!?—'-", "count": 0},
-    {"text": "😀🧑‍🏫", "count": 0},
-    {"text": "don't", "count": 1},
-    {"text": "don’t", "count": 1},
-    {"text": "biało-czerwony", "count": 1},
-    {"text": "biało‐czerwony biało‑czerwony", "count": 2},
-    {"text": "123", "count": 1},
-    {"text": "«Ąžuolas, stalas!»", "count": 2},
-    {"text": "Ąžuolas, stalas!", "count": 2},
-    {"text": "слово—слово", "count": 2},
-    {"text": "one\u200btwo\u200cthree\u200dfour\ufefffive", "count": 5},
-    {"text": "'word' -word- a--b a—b", "count": 6},
-    {"text": "𐐀𐐨 𝟙𝟚 𐐀-𝟙", "count": 3},
-    {"text": "\u0301 a\u0301\u0327 b\u0301-c", "count": 2},
-    {"text": "1\u0301a", "count": 2},
-    {"text": "word😀word", "count": 2},
-    {"text": "１２３ Ⅳ ²", "count": 3}
-  ]
+    {
+      "text": "",
+      "count": 0
+    },
+    {
+      "text": "  \t\n",
+      "count": 0
+    },
+    {
+      "text": "...!?—'-",
+      "count": 0
+    },
+    {
+      "text": "😀🧑‍🏫",
+      "count": 0
+    },
+    {
+      "text": "don't",
+      "count": 1
+    },
+    {
+      "text": "don’t",
+      "count": 1
+    },
+    {
+      "text": "biało-czerwony",
+      "count": 1
+    },
+    {
+      "text": "biało‐czerwony biało‑czerwony",
+      "count": 2
+    },
+    {
+      "text": "123",
+      "count": 1
+    },
+    {
+      "text": "«Ąžuolas, stalas!»",
+      "count": 2
+    },
+    {
+      "text": "Ąžuolas, stalas!",
+      "count": 2
+    },
+    {
+      "text": "слово—слово",
+      "count": 2
+    },
+    {
+      "text": "one​two‌three‍four﻿five",
+      "count": 5
+    },
+    {
+      "text": "'word' -word- a--b a—b",
+      "count": 6
+    },
+    {
+      "text": "𐐀𐐨 𝟙𝟚 𐐀-𝟙",
+      "count": 3
+    },
+    {
+      "text": "́ á̧ b́-c",
+      "count": 2
+    },
+    {
+      "text": "1́a",
+      "count": 2
+    },
+    {
+      "text": "word😀word",
+      "count": 2
+    },
+    {
+      "text": "１２３ Ⅳ ²",
+      "count": 3
+    },
+    {
+      "text": "Ᲊ",
+      "count": 0
+    },
+    {
+      "text": "aᲉb",
+      "count": 2
+    },
+    {
+      "text": "𞗐",
+      "count": 0
+    },
+    {
+      "text": "a𞗐b",
+      "count": 2
+    }
+  ],
+  "unicode_category_version": "15.1.0"
 }

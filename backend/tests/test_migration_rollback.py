@@ -7,6 +7,7 @@ import subprocess
 import uuid
 
 import pytest
+from alembic.script import ScriptDirectory
 from test_deploy_scripts import SOURCE, load_deploy
 
 pytestmark = pytest.mark.skipif(
@@ -14,7 +15,8 @@ pytestmark = pytest.mark.skipif(
     reason="Set RUN_DOCKER_QA=1 with locally built QA images",
 )
 BEFORE = "learning-qa-before:20261014"
-AFTER = "learning-qa-after:20261014"
+AFTER = os.environ.get("DOCKER_QA_AFTER", "learning-qa-after:free-response-task4")
+HEAD = ScriptDirectory(str(SOURCE / "backend/alembic")).get_current_head()
 
 
 def docker(*args, input=None):
@@ -46,6 +48,33 @@ Path('/data/youtube-cache').mkdir()
 Path('/data/youtube-cache/retained.json').write_text('{"segments":[{"text":"Old captions","start":1}]}')
 db.engine.dispose()
 """
+
+CURRENT_CONTENT = """
+from pathlib import Path
+from PIL import Image
+from app.config import Settings
+from app.db import Database
+from app.models import ImageAsset,SessionImage,StudySession,SessionCard
+from app.quiz import build_free_snapshot
+settings=Settings(_env_file=None,data_dir=Path('/data'))
+db=Database(settings)
+ref={'document_id':1,'page':1}
+exercise={'goal':'language','language':'lt','level':'B2','min_words':100,'max_words':150,
+ 'model_answer':'Ąžuolas yra medis.','rubric':[{'id':'clarity','label':'Aiškumas','weight':100}],
+ 'expected_points':[{'id':'tree','text':'Medis','essential':True,'sources':[ref]}],
+ 'source_fragments':[{'source':ref,'text':'Ąžuolas yra medis.'}]}
+snapshot=build_free_snapshot({'id':2,'question':'Aprašyk ąžuolą','question_type':'free_response',
+ 'mode':'quiz','language':'lt','exercise':exercise,'sources':[ref]},exercise['source_fragments'])
+Path('/data/images').mkdir(exist_ok=True)
+Image.new('RGB',(8,8),(20,100,40)).save('/data/images/qa.png')
+with db.session() as session:
+ session.add(StudySession(id=2,user_id=1,topic_ids=[1],mode='quiz',position=0,status='active'));session.flush()
+ session.add(SessionCard(id=2,session_id=2,position=0,snapshot=snapshot));session.flush()
+ session.add(ImageAsset(id='a'*32,filename='qa.png',owner_user_id=1,stage='ready',width=8,height=8,mime='image/png'));session.flush()
+ session.add(SessionImage(session_card_id=2,asset_id='a'*32,slot='answer',alt='Ąžuolas'))
+db.engine.dispose()
+"""
+
 
 READ = """
 import hashlib,json,sqlite3
@@ -155,12 +184,29 @@ def test_real_docker_migration_preserves_old_rows_json_private_files_and_env(qa)
     module.start()
     after = json.loads(command_image(AFTER, volume, READ))
     assert_old_data(before, after)
-    assert after["tables"]["alembic_version"]["rows"] == [["0006"]]
-    assert after["tables"]["cards"]["rows"][0][-2:] == ["choice", None]
+    assert after["tables"]["alembic_version"]["rows"] == [[HEAD]]
+    columns = after["tables"]["cards"]["columns"]
+    assert after["tables"]["cards"]["rows"][0][columns.index("question_type")] == "choice"
     assert (root / ".env").read_bytes() == environment
     assert (root / "compose.override.yaml").read_bytes() == override
     assert (root / ".env").stat().st_mode & 0o777 == 0o600
     assert len(list((root / "backups").glob("learning-*.tar.gz"))) == 1
+    # New v3 snapshots and private image references/files also survive a real cold restore.
+    module.run(["docker", "compose", "stop", "app"])
+    command_image(AFTER, volume, CURRENT_CONTENT)
+    current = json.loads(command_image(AFTER, volume, READ))
+    assert len(current["tables"]["session_images"]["rows"]) == 1
+    assert "images/qa.png" in current["files"]
+    archive = module.cold_backup(module.private_backups(), os.environ.copy())
+    command_image(
+        AFTER,
+        volume,
+        "from pathlib import Path; Path('/data/images/qa.png').write_bytes(b'changed')",
+    )
+    module.restore_backup(archive, volume, AFTER)
+    restored = json.loads(command_image(AFTER, volume, READ))
+    assert restored == current
+    module.run(["docker", "compose", "up", "-d", "--no-build", "--wait"])
 
 
 @pytest.mark.parametrize("keep_previous_container", [True, False])
@@ -174,14 +220,14 @@ def test_real_docker_failed_partial_migration_restores_old_image_and_complete_ba
     bad_context = tmp_path / "bad-image"
     bad_context.mkdir()
     (bad_context / "Dockerfile").write_text(
-        f"FROM {AFTER}\nCOPY failure.py /app/alembic/versions/0007_qa_failure.py\n"
+        f"FROM {AFTER}\nCOPY failure.py /app/alembic/versions/qa_failure.py\n"
     )
-    (bad_context / "failure.py").write_text("""
+    (bad_context / "failure.py").write_text(f"""
 from pathlib import Path
 import sqlalchemy as sa
 from alembic import op
-revision='0007'
-down_revision='0006'
+revision='qa_failure'
+down_revision='{HEAD}'
 branch_labels=None
 depends_on=None
 def upgrade():

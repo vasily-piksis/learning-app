@@ -14,3 +14,4 @@ def test_shared_unicode_word_counts(case):
 
 def test_counter_version_matches_shared_fixture():
     assert free_responses.WORD_COUNT_VERSION == FIXTURE["version"]
+    assert free_responses.WORD_COUNT_UNICODE_VERSION == FIXTURE["unicode_category_version"]

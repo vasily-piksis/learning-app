@@ -53,10 +53,15 @@ export default function StartStudy({
     [error, setError] = useState<string | null>(null),
     [preparing, setPreparing] = useState(false)
   const requestKey = useRef(crypto.randomUUID())
+  const [paidOptIn, setPaidOptIn] = useState(false)
   const requested = method === "mixed" ? types : [method]
   const rows = counts.flatMap((topic) =>
     requested.map((kind) => ({ topic, kind, ...readiness(topic, kind) }))
   )
+  const paid = requested.includes("free_response")
+  const unavailable =
+    paid &&
+    rows.some((row) => row.kind === "free_response" && row.runtime_unavailable)
   const missing = rows.filter((row) => !row.ready_count)
   const actionable = missing[0]
   const ready =
@@ -75,6 +80,7 @@ export default function StartStudy({
         const session = await api<StudySession>("/study", "POST", {
           topic_ids: topicIds,
           ...practiceRequest(method, types),
+          ...(paid ? { include_ai_evaluated: paidOptIn } : {}),
         })
         navigate(`study/${session.id}`)
       } else if (pending?.preparation_job_id)
@@ -150,6 +156,24 @@ export default function StartStudy({
           )}
         </div>
       ))}
+      {paid && (
+        <>
+          <label className="flex items-start gap-3">
+            <Checkbox
+              checked={paidOptIn}
+              onCheckedChange={(v) => setPaidOptIn(v === true)}
+            />
+            {t("Включить платную проверку ИИ")}
+          </label>
+          {unavailable && (
+            <p>
+              {t(
+                "Проверка ИИ сейчас недоступна. Сохранённые задания доступны."
+              )}
+            </p>
+          )}
+        </>
+      )}
       {missing.length > 0 && (
         <p>
           {t("Подготовка нужна: {items}", {
@@ -161,7 +185,12 @@ export default function StartStudy({
       )}
       <Button
         size="lg"
-        disabled={busy || !topicIds.length || !requested.length}
+        disabled={
+          (ready && paid && (!paidOptIn || unavailable)) ||
+          busy ||
+          !topicIds.length ||
+          !requested.length
+        }
         onClick={() => void start()}
       >
         {busy && <PendingIcon />}

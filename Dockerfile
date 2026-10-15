@@ -3,6 +3,7 @@ WORKDIR /build
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+COPY backend/app/word-count-profile.json /backend/app/word-count-profile.json
 RUN npm run build
 
 FROM python:3.13-slim AS runtime

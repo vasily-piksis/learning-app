@@ -1,3 +1,4 @@
+import FreeResponseSettings from "./FreeResponseSettings"
 import { useId } from "react"
 import { t } from "@/i18n"
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,112 @@ export default function ExerciseEditor({
   }
   return (
     <FieldGroup>
+      {questionType === "free_response" && "model_answer" in value && (
+        <>
+          <FreeResponseSettings
+            value={value}
+            onChange={(settings) => onChange({ ...value, ...settings })}
+            disabled={disabled}
+          />
+          <Field>
+            <FieldLabel htmlFor={`${prefix}-model`}>
+              {t("Образец ответа")}
+            </FieldLabel>
+            <Textarea
+              id={`${prefix}-model`}
+              value={value.model_answer}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange({ ...value, model_answer: e.target.value })
+              }
+            />
+          </Field>
+          {value.rubric.map((criterion, i) => (
+            <FieldGroup key={criterion.id}>
+              <Field>
+                <FieldLabel htmlFor={`${prefix}-criterion-${i}`}>
+                  {t("Критерий {n}", { n: i + 1 })}
+                </FieldLabel>
+                <Input
+                  id={`${prefix}-criterion-${i}`}
+                  value={criterion.label}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      rubric: value.rubric.map((r, n) =>
+                        n === i ? { ...r, label: e.target.value } : r
+                      ),
+                    })
+                  }
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${prefix}-weight-${i}`}>
+                  {t("Вес критерия {n}", { n: i + 1 })}
+                </FieldLabel>
+                <Input
+                  id={`${prefix}-weight-${i}`}
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={criterion.weight}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      rubric: value.rubric.map((r, n) =>
+                        n === i ? { ...r, weight: Number(e.target.value) } : r
+                      ),
+                    })
+                  }
+                />
+              </Field>
+            </FieldGroup>
+          ))}
+          {value.expected_points.map((point, i) => (
+            <FieldGroup key={point.id}>
+              <Field>
+                <FieldLabel htmlFor={`${prefix}-point-${i}`}>
+                  {t("Пункт {n}", { n: i + 1 })}
+                </FieldLabel>
+                <Textarea
+                  id={`${prefix}-point-${i}`}
+                  value={point.text}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      expected_points: value.expected_points.map((p, n) =>
+                        n === i ? { ...p, text: e.target.value } : p
+                      ),
+                    })
+                  }
+                />
+              </Field>
+              <Field orientation="horizontal">
+                <Checkbox
+                  id={`${prefix}-essential-${i}`}
+                  checked={point.essential}
+                  disabled={disabled}
+                  onCheckedChange={(v) =>
+                    onChange({
+                      ...value,
+                      expected_points: value.expected_points.map((p, n) =>
+                        n === i ? { ...p, essential: v === true } : p
+                      ),
+                    })
+                  }
+                />
+                <FieldLabel htmlFor={`${prefix}-essential-${i}`}>
+                  {t("Обязательный пункт {n}", { n: i + 1 })}
+                </FieldLabel>
+              </Field>
+            </FieldGroup>
+          ))}
+        </>
+      )}
+
       {questionType === "written" && "accepted_answers" in value && (
         <Field>
           <FieldLabel htmlFor={`${prefix}-answers`}>

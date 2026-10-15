@@ -113,6 +113,7 @@ export type ExerciseSubmission =
   | { order: string[] }
 export type GradePart = { id: string; correct: boolean }
 export type MethodAvailability = {
+  runtime_unavailable?: boolean
   ready_count: number
   draft_count: number
   needs_options_count: number
@@ -280,7 +281,7 @@ export type Job = {
 export type StudySession = {
   question_types?: Record<string, number>
   practice_method?: string
-  review?: {
+  review?: (Partial<EvaluationGrade> & {
     position: number
     card: Card
     correct: boolean
@@ -290,7 +291,7 @@ export type StudySession = {
     parts?: GradePart[]
     message_code?: string | null
     remembered: boolean | null
-  }[]
+  })[]
   id: number
   topic_ids: number[]
   topic_names: string[]
@@ -331,4 +332,14 @@ export type ImageGenerationJob = Omit<Job, "result"> & {
     applied_asset_id?: string
     discarded?: boolean
   } | null
+}
+
+export type EvaluationState = {
+  evaluation_id: number
+  job_id: number
+  status: "queued" | "running" | "failed" | "unknown" | "completed"
+  submission?: { free_text: string; audio_answer_id: null }
+  error?: string | null
+  error_code?: string | null
+  feedback?: Feedback & EvaluationGrade
 }

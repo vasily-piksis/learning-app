@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import uvicorn
-from app import downsub, image_generation
+from app import downsub, evaluations, image_generation
 from app.cli import create_user
 from app.config import Settings
 from app.main import create_app
@@ -29,9 +29,45 @@ class BrowserAI(FixtureAI):
         question_types=None,
         type_counts=None,
         practice_goal="content",
+        free_response_settings=None,
     ):
         from app.schemas import Generated, GeneratedCard, SourceRef
 
+        if free_response_settings:
+            ref = {"document_id": sources[0]["document_id"], "page": sources[0]["page"]}
+            settings = free_response_settings
+            exercise = {
+                **settings,
+                "model_answer": "Ąžuolas yra medis. Jis auga miške.",
+                "rubric": [
+                    {
+                        "id": "clarity",
+                        "label": "Aiškumas " + (settings["level"] or "turinys"),
+                        "weight": 100,
+                    }
+                ],
+                "expected_points": [
+                    {"id": "tree", "text": "Ąžuolas yra medis", "essential": True, "sources": [ref]}
+                ],
+                "source_fragments": [{"source": ref, "text": sources[0]["text"]}],
+            }
+            return Generated(
+                insufficient_reason=None,
+                cards=[
+                    GeneratedCard(
+                        topic_id=topic_id,
+                        question=f"Aprašyk ąžuolą {i}",
+                        answer=exercise["model_answer"],
+                        mode="quiz",
+                        options=[],
+                        question_type="free_response",
+                        exercise=exercise,
+                        sources=[SourceRef(**ref)],
+                        language=settings["language"],
+                    )
+                    for i in range(count)
+                ],
+            )
         kinds = question_types or ["choice"]
         if kinds == ["choice"]:
             result = super().generate(topic_id, sources, mode, count, target_language, existing)
@@ -129,6 +165,7 @@ def subtitle_boundary(method, url, **kwargs):
     """Only external HTTP is replaced; parsing, caching and jobs stay real."""
     if method == "POST" and url == "https://get.downsub.com/":
         canonical = json.loads(kwargs["data"])["url"]
+        language = "lt" if "LTfree12345" in canonical else "pl"
         return json.dumps(
             {
                 "url": canonical,
@@ -136,17 +173,22 @@ def subtitle_boundary(method, url, **kwargs):
                 "subtitles": [
                     {
                         "name": "Polish (auto-generated)",
-                        "language": "pl",
+                        "language": language,
                         "type": "youtube",
-                        "code": "pl_auto",
-                        "url": "browser-test-reference",
+                        "code": language + "_auto",
+                        "url": "browser-test-reference-" + language,
                     }
                 ],
                 "subtitlesAutoTrans": [{"language": "ru"}],
             }
         ).encode()
     if method == "GET" and url.startswith("https://subtitle.downsub.com/srt/"):
-        return b"1\n00:00:05,894 --> 00:00:09,250\nNil to rzeka w Egipcie.\n"
+        text = (
+            "Ąžuolas yra medis. Jis auga miške."
+            if "reference-lt" in url
+            else "Nil to rzeka w Egipcie."
+        )
+        return ("1\n00:00:05,894 --> 00:00:09,250\n" + text + "\n").encode()
     raise AssertionError("Unexpected external request in browser tests")
 
 
@@ -169,6 +211,46 @@ class BrowserImageGenerator:
         return image_generation.GeneratedImage(data.getvalue(), {"usage": {"total_tokens": 1}})
 
 
+class BrowserEvaluationAI:
+    """Paid provider boundary only; real reservation, durable stages and finalization."""
+
+    attempts = {}
+
+    def __init__(self, settings):
+        pass
+
+    def evaluate(self, snapshot, answer, before_request):
+        import time
+
+        from app.ai import TransientError
+        from app.free_responses import FreeResponseEvaluation
+
+        before_request()
+        time.sleep(2)
+        self.attempts[answer] = self.attempts.get(answer, 0) + 1
+        if "nežinoma" in answer and self.attempts[answer] == 1:
+            raise TransientError("Fixture unknown outcome")
+        exercise = snapshot["exercise"]
+        return FreeResponseEvaluation.model_validate(
+            {
+                "assessability": "assessable",
+                "reason": None,
+                "language_match": True,
+                "rubric_scores": [
+                    {"criterion_id": row["id"], "score": 3, "explanation": "Aišku ir suprantama."}
+                    for row in exercise["rubric"]
+                ],
+                "point_checks": [
+                    {"point_id": row["id"], "met": True, "evidence": []}
+                    for row in exercise["expected_points"]
+                ],
+                "corrections": [],
+                "summary": "Geras atsakymas.",
+                "suggestions": ["Rašyk daugiau."],
+            }
+        )
+
+
 def browser_app():
     port = int(os.environ.get("E2E_PORT", "18940"))
     settings = Settings(
@@ -177,12 +259,14 @@ def browser_app():
         app_origin=f"http://localhost:{port}",
         cookie_secure=False,
         openai_api_key="browser-fixture-only",
+        free_response_enabled=True,
         image_generation_enabled=True,
         openai_image_model="browser-image-fixture",
         image_daily_request_limit=100,
         youtube_provider="downsub",
         frontend_dir=Path("frontend/dist"),
     )
+    evaluations.EvaluationAI = BrowserEvaluationAI
     downsub.request = subtitle_boundary
     image_generation.ImageGenerator = BrowserImageGenerator
     instance = create_app(settings, ai=BrowserAI())

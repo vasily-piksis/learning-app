@@ -1,3 +1,5 @@
+import FreeResponse, { isEvaluationFeedback } from "./exercises/FreeResponse"
+import EvaluationFeedback from "./exercises/EvaluationFeedback"
 import { QuestionImageView } from "./exercises/QuestionImages"
 import ExerciseInput, { completeAnswer } from "./exercises/ExerciseInput"
 import ExerciseSolution from "./exercises/ExerciseSolution"
@@ -87,7 +89,13 @@ export default function Study({ id }: { id: number }) {
             : t("Попробуй вспомнить ответ, прежде чем открыть карточку.")
         }
       />
-      {value.card ? (
+      {value.card?.question_type === "free_response" ? (
+        <FreeResponse
+          key={value.position}
+          session={value}
+          onNext={session.refetch}
+        />
+      ) : value.card ? (
         <Question
           key={value.position}
           session={value}
@@ -532,6 +540,16 @@ function ReviewCard({
               "Эти ответы допустимы по отдельности, но не сочетаются друг с другом."
             )}
           </p>
+        )}
+        {isEvaluationFeedback({
+          ...item,
+          session_id: sessionId,
+          next_position: item.position + 1,
+        }) && (
+          <EvaluationFeedback
+            feedback={item as import("@/types").EvaluationGrade}
+            card={item.card}
+          />
         )}
         <QuestionImageView image={item.card.images?.question} />
         <ExerciseSolution card={item.card} />

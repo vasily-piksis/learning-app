@@ -299,3 +299,33 @@ usage-метаданные, без prompt, изображений и секре�
 миграция `qa_failure`. Прохождение обычного check с пропущенными Docker-тестами
 не заменяет эту проверку. Рабочие `.env`, Traefik и семейный volume при подготовке
 не меняются; платная генерация остаётся выключенной до отдельного решения оператора.
+
+### Written free responses
+
+Choose **Free response** in a topic to prepare assignments. Confirm the original
+material language, choose content or language practice, and select an explicit
+CEFR level for language work. Optional word targets are independent of CEFR.
+Review and edit the draft model answer, rubric weights and expected points before
+saving. The learner sees these private criteria only after a completed grade.
+
+Starting this method requires the paid AI checkbox. Typing and the live counter
+are local; **Grade with AI (paid)** starts evaluation. Out-of-range educational
+word targets warn but do not block submission or zero the score. Technical limits
+are 10000 Unicode scalar characters and 2000 words. `word_count_v1` uses the shared
+[Unicode 15.1 category profile](docs/word-count-profile.md), keeping browser and
+Python counts stable while preserving the exact raw answer.
+
+Pending answers remain frozen and reload from the session. Ambiguous HTTP replies
+retain the original submission/key for **Check submission again**. Failed or
+unknown evaluation offers an explicit same-answer paid retry with a fresh cost
+acknowledgement. No automatic paid retries originate from the UI. Results separate
+score, rubric, essential points, language feedback and word target; unavailable or
+failed evaluation never becomes a wrong answer. History repeats frozen assignments.
+Saved readiness remains visible even when grading is unavailable.
+
+Free-response evaluation defaults off (`FREE_RESPONSE_ENABLED=false`). Written
+release QA uses only disposable configuration and fake provider boundaries; no
+voice or picture-assignment feature is enabled by this UI. Run opt-in isolated
+migration/restore tests with `RUN_DOCKER_QA=1 .venv/bin/pytest -q
+backend/tests/test_migration_rollback.py`; build `learning-qa-after:free-response-task4`
+first, or provide `DOCKER_QA_AFTER`. These tests never use production volumes.

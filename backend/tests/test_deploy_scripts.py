@@ -147,8 +147,9 @@ def test_plain_docker_installation_does_not_require_traefik(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("diagnostic_failure", [False, True])
 def test_start_never_opens_migrated_volume_with_old_image_without_restoring_backup(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, diagnostic_failure
 ):
     import json
 
@@ -176,6 +177,11 @@ def test_start_never_opens_migrated_volume_with_old_image_without_restoring_back
         if command[:2] == ["docker", "inspect"]:
             return "old-image"
         if command[:2] == ["sh", "scripts/backup.sh"]:
+            if (
+                diagnostic_failure
+                and sum(e[:2] == ["sh", "scripts/backup.sh"] for e in events) == 2
+            ):
+                raise RuntimeError("Diagnostic backup unavailable")
             return str(backup)
         return ""
 

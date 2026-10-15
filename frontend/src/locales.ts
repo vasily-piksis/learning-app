@@ -1,4 +1,115 @@
 export const translations: Record<string, { pl: string; en: string }> = {
+  "Задание выполнено": { pl: "Zadanie wykonane", en: "Assignment completed" },
+  "Задание пока не выполнено": {
+    pl: "Zadanie jeszcze niewykonane",
+    en: "Assignment not completed yet",
+  },
+  "Свободный ответ": { pl: "Swobodna odpowiedź", en: "Free response" },
+  "Код исходного языка": {
+    pl: "Kod języka materiałów",
+    en: "Original language code",
+  },
+  "Подтверди язык материалов. Задание и исправления сохранят этот язык.": {
+    pl: "Potwierdź język materiałów. Zadanie i poprawki pozostaną w tym języku.",
+    en: "Confirm the material language. The assignment and corrections keep this language.",
+  },
+  "Уровень CEFR": { pl: "Poziom CEFR", en: "CEFR level" },
+  "Выбери уровень": { pl: "Wybierz poziom", en: "Choose a level" },
+  "Минимум слов (необязательно)": {
+    pl: "Minimum słów (opcjonalnie)",
+    en: "Minimum words (optional)",
+  },
+  "Максимум слов (необязательно)": {
+    pl: "Maksimum słów (opcjonalnie)",
+    en: "Maximum words (optional)",
+  },
+  "Диапазон слов — учебная цель. Ответ вне диапазона можно отправить.": {
+    pl: "Zakres słów jest celem nauki. Możesz wysłać odpowiedź poza zakresem.",
+    en: "The word range is a learning target. Answers outside it can be submitted.",
+  },
+  "Твой развёрнутый ответ": {
+    pl: "Twoja swobodna odpowiedź",
+    en: "Your written response",
+  },
+  "Слов: {count} · цель {min}–{max}": {
+    pl: "Słowa: {count} · cel {min}–{max}",
+    en: "Words: {count} · target {min}–{max}",
+  },
+  "Слов: {count}": { pl: "Słowa: {count}", en: "Words: {count}" },
+  "Вне рекомендуемого диапазона слов. Ответ всё равно можно отправить.": {
+    pl: "Poza zalecanym zakresem słów. Nadal możesz wysłać odpowiedź.",
+    en: "Outside the suggested word range. You can still submit.",
+  },
+  "Максимум 10000 символов и 2000 слов.": {
+    pl: "Maksymalnie 10000 znaków i 2000 słów.",
+    en: "Maximum 10000 characters and 2000 words.",
+  },
+  "Не удалось подтвердить состояние. Ответ сохранён; проверь отправку снова.": {
+    pl: "Nie udało się potwierdzić stanu. Odpowiedź zachowana; sprawdź wysyłanie ponownie.",
+    en: "Could not confirm the status. Your answer is retained; check submission again.",
+  },
+  "Проверяем ответ": { pl: "Trwa ocenianie", en: "Grading in progress" },
+  "Дневной лимит проверок исчерпан": {
+    pl: "Dzienny limit ocen został wyczerpany",
+    en: "Daily grading limit reached",
+  },
+  "Проверка ИИ сейчас недоступна. Сохранённые задания доступны.": {
+    pl: "Ocena AI jest teraz niedostępna. Zapisane zadania pozostają dostępne.",
+    en: "AI grading is currently unavailable. Saved exercises remain available.",
+  },
+  "Проверка не завершена. Оценка не выставлена.": {
+    pl: "Ocena nie została ukończona. Nie przyznano wyniku.",
+    en: "Grading did not finish. No score was assigned.",
+  },
+  "Проверить отправку снова": {
+    pl: "Sprawdź wysyłanie ponownie",
+    en: "Check submission again",
+  },
+  "Понимаю, что новый запрос может стоить дополнительно": {
+    pl: "Rozumiem, że kolejne żądanie może kosztować dodatkowo",
+    en: "I understand another request may cost extra",
+  },
+  "Повторить тот же ответ (платно)": {
+    pl: "Ponów tę samą odpowiedź (płatne)",
+    en: "Retry the same answer (paid)",
+  },
+  "Оценить с ИИ (платно)": {
+    pl: "Oceń z AI (płatne)",
+    en: "Grade with AI (paid)",
+  },
+  "Включить платную проверку ИИ": {
+    pl: "Włącz płatną ocenę AI",
+    en: "Enable paid AI grading",
+  },
+  "Образец ответа": { pl: "Przykładowa odpowiedź", en: "Model answer" },
+  "Критерий {n}": { pl: "Kryterium {n}", en: "Criterion {n}" },
+  "Вес критерия {n}": { pl: "Waga kryterium {n}", en: "Criterion weight {n}" },
+  "Пункт {n}": { pl: "Punkt {n}", en: "Point {n}" },
+  "Обязательный пункт {n}": {
+    pl: "Wymagany punkt {n}",
+    en: "Essential point {n}",
+  },
+  "Оценка ответа": { pl: "Ocena odpowiedzi", en: "Response evaluation" },
+  "Оценка: {score}/100": { pl: "Wynik: {score}/100", en: "Score: {score}/100" },
+  Учтено: { pl: "Uwzględniono", en: "Included" },
+  "Нужно дополнить": { pl: "Do uzupełnienia", en: "Needs detail" },
+  "Диапазон слов соблюдён": {
+    pl: "Cel słów osiągnięty",
+    en: "Word target met",
+  },
+  "Диапазон слов не соблюдён": {
+    pl: "Cel słów nieosiągnięty",
+    en: "Word target not met",
+  },
+  "Язык задания сохранён": {
+    pl: "Zachowano język zadania",
+    en: "Assignment language preserved",
+  },
+  "Язык ответа отличается от задания": {
+    pl: "Język odpowiedzi różni się od zadania",
+    en: "Answer language differs from the assignment",
+  },
+  Исправление: { pl: "Poprawka", en: "Correction" },
   "Генерация картинок": { pl: "Generacja obrazków", en: "Image generation" },
 
   "Эта задача использует исходный запрос и параметры. Для нового запроса сначала откажись от задачи.":

@@ -1,12 +1,25 @@
 """Bounded free-response contracts and pure grading helpers."""
 
+import json
 import unicodedata
+from bisect import bisect_right
 from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 WORD_COUNT_VERSION = 1
+_PROFILE = json.loads(Path(__file__).with_name("word-count-profile.json").read_text())
+WORD_COUNT_UNICODE_VERSION = _PROFILE["unicode_category_version"]
+_RANGES = _PROFILE["ranges"]
+_STARTS = [row[0] for row in _RANGES]
+
+
+def _category(char: str) -> str:
+    point = ord(char)
+    index = bisect_right(_STARTS, point) - 1
+    return _RANGES[index][2] if index >= 0 and point <= _RANGES[index][1] else ""
 
 
 def count_words(text: str) -> int:
@@ -14,7 +27,7 @@ def count_words(text: str) -> int:
     text = unicodedata.normalize("NFC", text)
     count, active, letter = 0, False, False
     for i, char in enumerate(text):
-        category = unicodedata.category(char)[0]
+        category = _category(char)
         if category in {"L", "N"}:
             count += not active
             active, letter = True, category == "L"
@@ -24,7 +37,7 @@ def count_words(text: str) -> int:
             char in "'’\u002d‐‑"
             and active
             and i + 1 < len(text)
-            and unicodedata.category(text[i + 1])[0] in {"L", "N"}
+            and _category(text[i + 1]) in {"L", "N"}
         ):
             letter = False
         else:

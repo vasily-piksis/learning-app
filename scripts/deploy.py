@@ -178,18 +178,29 @@ def start():
     except subprocess.CalledProcessError:
         run(["docker", "compose", "stop", "app"], env=environment)
         if archive:
-            failed = cold_backup(private_backups(), environment)
-            metadata = private_backups() / "failed-update.json"
-            metadata.write_text(
-                json.dumps(
-                    {
-                        "previous_image": previous,
-                        "restore_archive": str(archive),
-                        "failed_state_archive": str(failed),
-                    }
+            # Diagnostics must never prevent restoration of the known-good archive.
+            failed = None
+            diagnostic_error = None
+            try:
+                failed = cold_backup(private_backups(), environment)
+            except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+                diagnostic_error = str(error)
+                print(f"Failed-state backup unavailable: {error}", flush=True)
+            try:
+                metadata = private_backups() / "failed-update.json"
+                metadata.write_text(
+                    json.dumps(
+                        {
+                            "previous_image": previous,
+                            "restore_archive": str(archive),
+                            "failed_state_archive": str(failed) if failed else None,
+                            "diagnostic_error": diagnostic_error,
+                        }
+                    )
                 )
-            )
-            metadata.chmod(0o600)
+                metadata.chmod(0o600)
+            except OSError as error:
+                print(f"Failed-update metadata unavailable: {error}", flush=True)
             restore_backup(archive, volume, previous or image, env=environment)
             if previous:
                 previous_image_start(previous, environment)
