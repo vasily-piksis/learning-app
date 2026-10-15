@@ -17,7 +17,14 @@ from .jobs import (
     request_replay,
 )
 from .models import Card, CardSource, Document, Job
-from .schemas import GeneratedCard, ImageUpdate, Strict
+from .quiz import free_settings, validate_free_preparation
+from .schemas import (
+    DeterministicGeneratedCard,
+    GeneratedCard,
+    ImageUpdate,
+    PreparedFreeCard,
+    Strict,
+)
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
@@ -38,6 +45,24 @@ class Regenerated(Strict):
             not self.insufficient_reason or not self.insufficient_reason.strip()
         ):
             raise ValueError("Нужен вопрос либо причина недостаточности")
+        return self
+
+
+class DeterministicRegenerated(Regenerated):
+    card: DeterministicGeneratedCard | None
+
+
+class RegeneratedFreeResponse(Strict):
+    card: PreparedFreeCard | None
+    insufficient_reason: str | None = Field(max_length=2000)
+    source_language_matches: bool
+
+    @model_validator(mode="after")
+    def one_result(self):
+        if (self.card is None) == (not (self.insufficient_reason or "").strip()):
+            raise ValueError("Нужен вопрос либо причина недостаточности")
+        if self.card is not None and not self.source_language_matches:
+            raise ValueError("Нельзя переводить исходные материалы")
         return self
 
 
@@ -77,6 +102,10 @@ def validate_candidate(db, payload, candidate):
     ):
         raise ValueError("Нельзя изменить тему, тип или язык вопроса")
     check_refs(candidate.sources, snapshot["sources"])
+    if candidate.question_type == "free_response":
+        validate_free_preparation(
+            candidate.model_dump(), snapshot["sources"], free_settings(snapshot["exercise"])
+        )
     key = question_key(
         candidate.topic_id,
         candidate.question,

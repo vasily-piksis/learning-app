@@ -22,6 +22,7 @@ from .quiz import (
     prepare_options,
     quiz_ready,
     save_options,
+    validate_free_preparation,
     validate_preparation,
 )
 from .schemas import (
@@ -195,6 +196,11 @@ def generate(database, ai, payload, job_id=None):
             if job_id is not None and db.get(Job, job_id).status != "running":
                 raise ValueError("Задача отменена")
             get_or_404(db, Topic, topic["id"])
+            if (
+                kinds == ["free_response"]
+                and material_fingerprint(db, topic["id"]) != topic["material_fingerprint"]
+            ):
+                raise ValueError("Материалы изменились до подготовки")
             for source in topic["sources"]:
                 get_or_404(db, Document, source["document_id"])
         count = sum(quotas[topic["id"]].values())
@@ -205,6 +211,8 @@ def generate(database, ai, payload, job_id=None):
                 type_counts=quotas[topic["id"]],
                 practice_goal=payload.get("practice_goal", "content"),
             )
+        if kinds == ["free_response"]:
+            arguments["free_response_settings"] = payload["free_response_settings"]
         generated = ai.generate(topic["id"], topic["sources"], payload["mode"], count, **arguments)
         counts = Counter(card.question_type for card in generated.cards)
         if any(
@@ -252,6 +260,10 @@ def generate(database, ai, payload, job_id=None):
             if len(languages) == 1 and card.language and card.language not in languages:
                 raise ValueError("Модель изменила язык исходного материала")
             card.language = card.language or (next(iter(languages)) if languages else None)
+            if card.question_type == "free_response":
+                validate_free_preparation(
+                    card.model_dump(), topic["sources"], payload["free_response_settings"]
+                )
             results.append((card, topic["sources"]))
     return results, reasons, unsupported, outcomes
 
@@ -333,6 +345,10 @@ def run_job(database, ai, identifier):
             if job.status != "running":
                 return
             if kind == "generate":
+                if payload.get("question_types") == ["free_response"]:
+                    for topic in payload["topics"]:
+                        if material_fingerprint(db, topic["id"]) != topic["material_fingerprint"]:
+                            raise ValueError("Материалы изменились во время подготовки")
                 existing = {
                     question_key(
                         c.topic_id, c.question, c.answer, c.language, c.question_type, c.exercise
@@ -493,7 +509,11 @@ def start_generation(body: GenerateBody, request: Request):
     user = require_user(request)
     with request.app.state.db.session() as db:
         db.execute(text("BEGIN IMMEDIATE"))
-        body_signature = fingerprint(body.model_dump(exclude={"idempotency_key"}))
+        signature_body = body.model_dump(
+            exclude={"idempotency_key"}
+            | ({"free_response_settings"} if body.free_response_settings is None else set())
+        )
+        body_signature = fingerprint(signature_body)
         replay = request_replay(db, user.id, "generate", body.idempotency_key, body_signature)
         if replay is not None:
             return job_data(replay, db)
@@ -539,6 +559,14 @@ def start_generation(body: GenerateBody, request: Request):
                     length += len(page.text)
             if not sources:
                 raise HTTPException(422, "В каждой выбранной теме нужны готовые материалы")
+            if body.free_response_settings is not None:
+                languages = {s["language"] for s in sources if s.get("language")}
+                if (
+                    len(languages) > 1
+                    or languages
+                    and body.free_response_settings.language not in languages
+                ):
+                    raise HTTPException(422, "Выберите однородные источники и их исходный язык")
             existing = [
                 {
                     "question": c.question,
@@ -566,7 +594,7 @@ def start_generation(body: GenerateBody, request: Request):
             )
         scope = fingerprint(
             {
-                "body": body.model_dump(exclude={"idempotency_key"}),
+                "body": signature_body,
                 "sources": [{"id": t["id"], "sources": t["sources"]} for t in topics],
             }
         )
@@ -591,6 +619,9 @@ def start_generation(body: GenerateBody, request: Request):
                 "target_language": None,
                 "question_types": body.question_types,
                 "practice_goal": body.practice_goal,
+                "free_response_settings": body.free_response_settings.model_dump()
+                if body.free_response_settings
+                else None,
                 "scope": scope,
             },
         )
@@ -659,6 +690,10 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
         original = card_data(db, card)
         supplied = body.model_dump(exclude={"version", "image_updates"}, exclude_unset=True)
         exercise = supplied.get("exercise", original["exercise"])
+        if card.question_type == "free_response" and isinstance(exercise, dict):
+            exercise = {**exercise}
+            if exercise.get("source_fragments") is None:
+                exercise["source_fragments"] = original["exercise"]["source_fragments"]
         try:
             validated = GeneratedCard.model_validate(
                 {
@@ -684,6 +719,17 @@ def edit_card(identifier: int, body: CardEdit, request: Request):
                     ],
                 }
             )
+            if card.question_type == "free_response":
+                if (
+                    validated.exercise.model_dump()["source_fragments"]
+                    != original["exercise"]["source_fragments"]
+                ):
+                    raise ValueError(
+                        "Сохраните подготовленные фрагменты; новые требуют регенерации"
+                    )
+                validate_free_preparation(
+                    validated.model_dump(), card_data(db, card, include_text=True)["sources"]
+                )
             if (
                 card.question_type != "choice"
                 and body.answer is not None

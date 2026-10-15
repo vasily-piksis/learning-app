@@ -99,3 +99,82 @@ def save_options(db, payload, results):
         card.mode, card.options, card.correct_index = "quiz", result.options, result.correct_index
         card.correct_indices = result.correct_indices
         card.version += 1
+
+
+def free_settings(exercise):
+    """The settings that preparation/regeneration must preserve exactly."""
+    from .schemas import FreeResponseSettings
+
+    return FreeResponseSettings.model_validate(
+        {key: exercise.get(key) for key in ("goal", "language", "level", "min_words", "max_words")}
+    ).model_dump()
+
+
+def validate_free_preparation(card, sources, settings=None):
+    """Validate selected evidence against authorized original pages, never model refs alone."""
+    from .free_responses import FreeResponseExercise
+
+    exercise = FreeResponseExercise.model_validate(card["exercise"])
+    if card.get("question_type") != "free_response" or card.get("mode") != "quiz":
+        raise ValueError("Нужен свободный ответ в режиме quiz")
+    if card.get("target_language") or card.get("language") != exercise.language:
+        raise ValueError("Язык задания должен совпадать с исходным языком")
+    if settings is not None and free_settings(exercise.model_dump()) != free_settings(settings):
+        raise ValueError("Модель изменила настройки свободного ответа")
+    originals = {(s["document_id"], s["page"]): s for s in sources}
+    refs = {(s["document_id"], s["page"]) for s in card["sources"]}
+    if not refs or not refs <= originals.keys():
+        raise ValueError("Недопустимый источник задания")
+    languages = {s.get("language") for s in sources if s.get("language")}
+    if len(languages) > 1 or languages and exercise.language not in languages:
+        raise ValueError("Источники должны сохранять язык задания")
+    used = {(r.document_id, r.page) for point in exercise.expected_points for r in point.sources}
+    for fragment in exercise.source_fragments:
+        ref = (fragment.source.document_id, fragment.source.page)
+        if (
+            ref not in refs
+            or ref not in used
+            or fragment.text not in originals[ref].get("text", "")
+        ):
+            raise ValueError("Фрагмент должен дословно входить в разрешённый источник пункта")
+    return exercise
+
+
+def build_free_snapshot(card: dict, source_fragments: list) -> dict:
+    """Freeze only previously prepared evidence; never fetch or truncate current pages."""
+    import copy
+
+    from .free_responses import FreeResponseExercise
+
+    exercise = FreeResponseExercise.model_validate(card["exercise"])
+    prepared = exercise.model_dump()["source_fragments"]
+    if source_fragments != prepared:
+        raise ValueError("Снимок должен использовать ранее подготовленные фрагменты")
+    if (
+        card.get("question_type") != "free_response"
+        or card.get("mode") != "quiz"
+        or card.get("language") != exercise.language
+        or card.get("target_language")
+    ):
+        raise ValueError("Настройки снимка не согласованы")
+    # Membership in full original pages was checked at preparation/edit time.
+    originals = {
+        (source["document_id"], source["page"]): source for source in card.get("sources", [])
+    }
+    sources = {}
+    for fragment in prepared:
+        ref = (fragment["source"]["document_id"], fragment["source"]["page"])
+        if ref not in originals:
+            raise ValueError("Фрагменты не принадлежат источникам карточки")
+        if ref not in sources:
+            sources[ref] = {key: value for key, value in originals[ref].items() if key != "text"}
+            sources[ref]["text"] = fragment["text"]
+        else:
+            sources[ref]["text"] += "\n\n" + fragment["text"]
+    snapshot = copy.deepcopy(card)
+    snapshot.update(
+        snapshot_version=3, exercise=exercise.model_dump(), answer=exercise.model_answer
+    )
+    # Preserve source display labels while replacing full pages with selected excerpts.
+    snapshot["sources"] = copy.deepcopy(list(sources.values()))
+    return snapshot

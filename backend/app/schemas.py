@@ -12,7 +12,15 @@ from .exercises import (
     solution_text,
     validate_exercise,
 )
-from .free_responses import FreeResponseExercise
+from .free_responses import (
+    ExpectedPoint,
+    FreeResponseExercise,
+    Goal,
+    Level,
+    RubricCriterion,
+    SourceFragment,
+    WordBound,
+)
 
 Exercise = (
     WrittenExercise
@@ -22,6 +30,34 @@ Exercise = (
     | OrderingExercise
     | FreeResponseExercise
 )
+
+
+class FreeResponseSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    goal: Goal
+    language: str = Field(pattern=r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$", max_length=35)
+    level: Level | None
+    min_words: WordBound | None = None
+    max_words: WordBound | None = None
+
+    @model_validator(mode="after")
+    def coherent(self):
+        if (self.goal == "language") != (self.level is not None):
+            raise ValueError("Уровень CEFR обязателен только для языковой практики")
+        if (
+            self.min_words is not None
+            and self.max_words is not None
+            and self.min_words > self.max_words
+        ):
+            raise ValueError("Минимум слов превышает максимум")
+        return self
+
+
+class FreeResponseEdit(FreeResponseSettings):
+    model_answer: str = Field(min_length=1, max_length=4000)
+    rubric: list[RubricCriterion] = Field(min_length=1, max_length=8)
+    expected_points: list[ExpectedPoint] = Field(min_length=1, max_length=12)
+    source_fragments: list[SourceFragment] | None = Field(default=None, min_length=1, max_length=20)
 
 
 class NameBody(BaseModel):
@@ -130,6 +166,99 @@ class Generated(Strict):
     unsupported_types: list[UnsupportedType] = Field(default_factory=list)
 
 
+# Keep the original deterministic provider surface separate from paid free responses.
+LegacyQuestionType = Literal["choice", "written", "gap", "ending", "matching", "ordering"]
+LegacyExercise = (
+    WrittenExercise | GapExercise | EndingExercise | MatchingExercise | OrderingExercise
+)
+
+
+class DeterministicGeneratedCard(GeneratedCard):
+    question_type: LegacyQuestionType = "choice"
+    exercise: LegacyExercise | None = None
+
+
+class DeterministicUnsupportedType(UnsupportedType):
+    question_type: LegacyQuestionType
+
+
+class DeterministicGenerated(Generated):
+    cards: list[DeterministicGeneratedCard]
+    unsupported_types: list[DeterministicUnsupportedType] = Field(default_factory=list)
+
+
+Dimension = Literal[
+    "accuracy", "coverage", "explanation", "task_completion", "grammar", "vocabulary", "coherence"
+]
+
+
+class PreparedCriterion(RubricCriterion):
+    dimensions: list[Dimension] = Field(min_length=1, max_length=4)
+
+
+class PreparedFreeResponse(FreeResponseExercise):
+    rubric: list[PreparedCriterion] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def goal_dimensions(self):
+        expected = (
+            {"accuracy", "coverage", "explanation"}
+            if self.goal == "content"
+            else {"task_completion", "grammar", "vocabulary", "coherence"}
+        )
+        dimensions = {dimension for criterion in self.rubric for dimension in criterion.dimensions}
+        if dimensions != expected or any(
+            len(set(c.dimensions)) != len(c.dimensions) for c in self.rubric
+        ):
+            raise ValueError("Критерии не соответствуют цели задания")
+        return self
+
+
+class PreparedFreeCard(GeneratedCard):
+    question_type: Literal["free_response"]
+    exercise: PreparedFreeResponse
+
+    @model_validator(mode="after")
+    def semantic_fields(self):
+        # Provider-only dimension metadata is checked before conversion to storage.
+        if (
+            self.mode != "quiz"
+            or self.options
+            or self.correct_indices
+            or self.correct_index is not None
+        ):
+            raise ValueError("Свободный ответ требует quiz без вариантов")
+        if not self.question.strip() or not self.sources or self.language != self.exercise.language:
+            raise ValueError("Нужны вопрос, источники и согласованный язык")
+        self.answer = self.exercise.model_answer
+        return self
+
+    def stored_card(self):
+        data = self.model_dump()
+        for criterion in data["exercise"]["rubric"]:
+            criterion.pop("dimensions")
+        return GeneratedCard.model_validate(data)
+
+
+class FreeUnsupportedType(UnsupportedType):
+    question_type: Literal["free_response"]
+
+
+class GeneratedFreeResponse(Strict):
+    cards: list[PreparedFreeCard] = Field(max_length=30)
+    insufficient_reason: str | None = Field(max_length=2000)
+    unsupported_types: list[FreeUnsupportedType] = Field(default_factory=list, max_length=1)
+    source_language_matches: bool
+
+    @model_validator(mode="after")
+    def consistent_outcome(self):
+        if not self.source_language_matches and self.cards:
+            raise ValueError("Нельзя переводить исходный материал")
+        if not self.cards and not (self.insufficient_reason or "").strip():
+            raise ValueError("Укажите причину недостаточности материала")
+        return self
+
+
 class QuizOptions(Strict):
     card_id: int
     options: list[str] = Field(min_length=2, max_length=6)
@@ -166,9 +295,20 @@ class GenerateBody(Strict):
     )
     practice_goal: Literal["content", "language"] = "content"
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=80)
+    free_response_settings: FreeResponseSettings | None = None
 
     @model_validator(mode="after")
     def distinct_topics(self):
+        if "free_response" in self.question_types:
+            if (
+                self.question_types != ["free_response"]
+                or len(self.topic_ids) != 1
+                or self.mode != "quiz"
+                or self.free_response_settings is None
+            ):
+                raise ValueError("Свободные ответы требуют одну тему, quiz и явные настройки")
+        elif self.free_response_settings is not None:
+            raise ValueError("Настройки свободного ответа доступны только для этого типа")
         if self.target_language is not None:
             raise ValueError(
                 "Учебное содержимое сохраняет исходный язык; перевод не поддерживается"
@@ -197,7 +337,7 @@ class CardEdit(Strict):
     question: str = Field(min_length=1, max_length=10000)
     answer: str | None = Field(default=None, min_length=1, max_length=10000)
     options: list[str] = Field(default_factory=list)
-    exercise: Exercise | None = None
+    exercise: Exercise | FreeResponseEdit | None = None
     correct_index: StrictInt | None = None
     correct_indices: list[StrictInt] | None = None
     version: int
