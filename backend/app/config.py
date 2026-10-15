@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     openai_vision_enabled: bool = False
     free_response_enabled: bool = False
     free_response_daily_request_limit: int = 100
+    transcription_enabled: bool = False
+    openai_transcription_model: str = "gpt-transcribe"
+    transcription_daily_seconds_limit: int = 1800
     budget_timezone: str = "Europe/Vilnius"
     image_generation_enabled: bool = False
     openai_image_model: str = ""

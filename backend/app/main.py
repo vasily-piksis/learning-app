@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ai import AI
+from .answer_audio import router as answer_audio_router
 from .auth import LoginLimiter, identity
 from .auth import router as auth_router
 from .config import Settings
@@ -109,6 +110,7 @@ def create_app(settings: Settings | None = None, ai=None, worker=True) -> FastAP
     app.include_router(regeneration_router)
     app.include_router(study_router)
     app.include_router(evaluations_router)
+    app.include_router(answer_audio_router)
     app.include_router(youtube_router)
 
     @app.get("/api/health")

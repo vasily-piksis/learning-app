@@ -160,6 +160,9 @@ def answer_evaluation(db, settings, session, card, user_id, key, submission):
         or key_used(db, user_id, key)
     ):
         raise HTTPException(409, "Ответ или идентификатор запроса уже сохранён")
+    from .answer_audio import voice_metadata
+
+    voice_metadata(db, card, user_id, submission)
     job = Job(
         user_id=user_id,
         kind="evaluate_response",
@@ -265,8 +268,15 @@ def finalize_evaluation(database, evaluation_id, revision, validated_result):
         if evaluation.staged_result != validated_result:
             raise EvaluationCancelled()
         grade = EvaluationGrade.model_validate(evaluation.staged_result)
+        from .answer_audio import voice_metadata
+
+        voice = voice_metadata(db, card, evaluation.user_id, evaluation.submission)
         stored = StoredEvaluationGrade(
-            **grade.model_dump(), version=2, evaluation_id=evaluation.id, input_method="text"
+            **grade.model_dump(),
+            version=2,
+            evaluation_id=evaluation.id,
+            input_method="voice" if voice else "text",
+            voice=voice,
         ).model_dump(exclude_none=True)
         # Preserve the null academic word limits in the stored, versioned result.
         stored["word_limit"] = grade.word_limit.model_dump()

@@ -282,7 +282,7 @@ def downgrade():raise RuntimeError('Restore backup')
 def test_actual_compose_flags_reach_runtime_settings(tmp_path, enabled):
     environment = tmp_path / "sentinels.env"
     environment.write_text(
-        f"FREE_RESPONSE_ENABLED={enabled}\nPICTURE_DESCRIPTION_ENABLED={enabled}\nOPENAI_VISION_ENABLED={enabled}\nIMAGE_GENERATION_ENABLED=false\nOPENAI_IMAGE_MODEL=\nOPENAI_API_KEY=\nFREE_RESPONSE_DAILY_REQUEST_LIMIT=37\nIMAGE_DAILY_REQUEST_LIMIT=13\nBUDGET_TIMEZONE=UTC\nIMAGE_BUDGET_TIMEZONE=Europe/Warsaw\n"
+        f"FREE_RESPONSE_ENABLED={enabled}\nPICTURE_DESCRIPTION_ENABLED={enabled}\nOPENAI_VISION_ENABLED={enabled}\nIMAGE_GENERATION_ENABLED=false\nOPENAI_IMAGE_MODEL=\nOPENAI_API_KEY=\nFREE_RESPONSE_DAILY_REQUEST_LIMIT=37\nIMAGE_DAILY_REQUEST_LIMIT=13\nBUDGET_TIMEZONE=UTC\nIMAGE_BUDGET_TIMEZONE=Europe/Warsaw\nTRANSCRIPTION_ENABLED={enabled}\nOPENAI_TRANSCRIPTION_MODEL=operator-audio-test\nTRANSCRIPTION_DAILY_SECONDS_LIMIT=73\n"
     )
     configuration = json.loads(
         docker(
@@ -298,6 +298,9 @@ def test_actual_compose_flags_reach_runtime_settings(tmp_path, enabled):
     )
     config = configuration["services"]["app"]["environment"]
     names = [
+        "TRANSCRIPTION_ENABLED",
+        "OPENAI_TRANSCRIPTION_MODEL",
+        "TRANSCRIPTION_DAILY_SECONDS_LIMIT",
         "FREE_RESPONSE_ENABLED",
         "PICTURE_DESCRIPTION_ENABLED",
         "OPENAI_VISION_ENABLED",
@@ -325,6 +328,9 @@ def test_actual_compose_flags_reach_runtime_settings(tmp_path, enabled):
             + "}))",
         )
     )
+    assert actual["TRANSCRIPTION_ENABLED"] == (enabled == "true")
+    assert actual["OPENAI_TRANSCRIPTION_MODEL"] == "operator-audio-test"
+    assert actual["TRANSCRIPTION_DAILY_SECONDS_LIMIT"] == 73
     assert actual["PICTURE_DESCRIPTION_ENABLED"] == (enabled == "true")
     assert actual["FREE_RESPONSE_ENABLED"] == (enabled == "true")
     assert actual["OPENAI_VISION_ENABLED"] == (enabled == "true")
@@ -332,3 +338,32 @@ def test_actual_compose_flags_reach_runtime_settings(tmp_path, enabled):
     assert actual["FREE_RESPONSE_DAILY_REQUEST_LIMIT"] == 37
     assert actual["IMAGE_DAILY_REQUEST_LIMIT"] == 13
     assert actual["BUDGET_TIMEZONE"] == "UTC" and actual["IMAGE_BUDGET_TIMEZONE"] == "Europe/Warsaw"
+
+
+def test_runtime_audio_codecs_nonroot(tmp_path):
+    script = """
+import os,subprocess,uuid
+from pathlib import Path
+from app.answer_audio import validate_audio
+assert os.getuid()==10001
+for extension,codec in [('wav','pcm_s16le'),('mp4','aac'),('webm','libopus'),('ogg','libopus')]:
+ path=Path('/tmp')/(uuid.uuid4().hex+'.'+extension)
+ subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i','sine=duration=0.2','-c:a',codec,str(path)],check=True)
+ result=validate_audio(path)
+ assert 0.19<=result.duration<=0.3
+ result.normalized_path.unlink();path.unlink()
+print('non-root runtime codecs: WAV MP4 WebM Ogg passed')
+"""
+    assert "WAV MP4 WebM Ogg passed" in docker(
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--label",
+        "traefik.enable=false",
+        "--entrypoint",
+        "python",
+        AFTER,
+        "-c",
+        script,
+    )

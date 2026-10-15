@@ -71,6 +71,7 @@ class AnswerBody(PositionBody):
     choices: list[StrictInt] | None = None
     remembered: bool | None = None
     text: StrictStr | None = Field(default=None, max_length=1000)
+    audio_answer_id: StrictStr | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
     free_text: StrictStr | None = Field(default=None, max_length=10000)
     gap_answers: dict[StrictStr, StrictStr] | None = None
     pairs: list[dict[StrictStr, StrictStr]] | None = Field(default=None, max_length=8)
@@ -395,6 +396,14 @@ def delete_history(body: DeleteHistoryBody, request: Request):
         ):
             # Keep the ID reserved so an in-flight worker cannot write into a new job.
             job.status, job.payload, job.result, job.error = "deleted", {}, None, None
+        from .answer_audio import cancel_audio
+        from .models import AudioAnswer
+
+        for audio in db.scalars(
+            select(AudioAnswer).where(AudioAnswer.session_card_id.in_(card_ids))
+        ):
+            cancel_audio(db, audio, deleted=True)
+        db.flush()
         db.execute(delete(Explanation).where(Explanation.session_card_id.in_(card_ids)))
         db.execute(delete(Evaluation).where(Evaluation.session_card_id.in_(card_ids)))
         db.execute(delete(Attempt).where(Attempt.session_card_id.in_(card_ids)))
@@ -406,6 +415,9 @@ def delete_history(body: DeleteHistoryBody, request: Request):
     from .question_images import cleanup_image_assets
 
     cleanup_image_assets(request.app.state.db)
+    from .answer_audio import cleanup_answer_audio
+
+    cleanup_answer_audio(request.app.state.db)
     return result
 
 

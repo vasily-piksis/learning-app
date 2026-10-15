@@ -248,8 +248,9 @@ ffprobe/ffmpeg в Docker: argv без shell, stdin disabled, bounded timeout 10/
 без network/protocol URLs; только UUID файл сервера; normalize mono 16 kHz WAV.
 Проверка duration использует число декодированных WAV samples, не только metadata
 ffprobe. Decode ограничен 181 секундой, результат >180 отвергается целиком,
-не превращается молча в обрезанное допустимое аудио. Unknown duration и video
-отвергаются; квота резервируется по проверенной декодированной длительности.
+не превращается молча в обрезанное допустимое аудио. Отсутствующая duration в
+metadata допускается только при конечной декодированной длительности ≤180 секунд; неизвестная/бесконечная декодированная duration и video
+отвергаются. Квота резервируется по проверенной декодированной длительности.
 
 Файлы `/data/answer-audio`, owner/session-bound, не static. Local replay требует
 только `media-src 'self' blob:`; img-src/connect-src прежние, blob URL освобождается

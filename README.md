@@ -354,3 +354,55 @@ and an upload request ledger that prevents duplicate/deleted draft resurrection.
 references protect images only while jobs are active. Use a full cold backup restore for rollback.
 Disposable current-head QA can select the prior image with `DOCKER_QA_BEFORE` and the rebuilt
 current image with `DOCKER_QA_AFTER`; sentinel Compose/runtime checks use no provider key.
+
+
+## Private voice input
+
+Voice transcription is a separate, explicit paid action for free responses and picture
+descriptions. It is disabled by default: `TRANSCRIPTION_ENABLED=false`. Operators
+can set `OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe` and
+`TRANSCRIPTION_DAILY_SECONDS_LIMIT=1800`; Compose passes all three settings to the
+application. No configuration or startup check calls a paid provider. Text input
+remains available when transcription is disabled. Host tests require ffmpeg/ffprobe;
+CI installs them explicitly and the Docker runtime includes both while running as
+UID 10001.
+
+Uploads are limited to 15 MiB and 180 seconds of actual decoded samples. MP4, WebM,
+Ogg and WAV audio are normalized to mono 16 kHz WAV. Video, external references,
+playlists, corrupt media and nonfinite durations are rejected. Missing container
+duration (common for WebM) is allowed only when bounded decoding proves finite audio
+of at most 180 seconds. A 181-second decode ceiling detects and rejects overlong
+recordings rather than silently trimming them to the allowed limit.
+
+The Audio API preserves the original language; the assignment's full language code
+is stored, with an ISO primary-language hint sent to the provider. Detected language
+mismatch is visible before grading; unknown detection stays unknown. No pronunciation,
+accent, pace or fluency assessment is inferred from the transcript. Review and edit
+the transcript before submitting it for a separate paid evaluation. History retains
+the original transcript, final answer, both word counts and the server-computed
+editing flag. It does not replay audio.
+
+Each provider send reserves `ceil(decoded_seconds)` against the family's calendar
+day in `BUDGET_TIMEZONE`, including explicit manual retries. SDK retries are disabled.
+Timeouts are unknown outcomes and may already have cost money; there is no automatic
+resend on recovery. Manual retry requires a new key and explicit cost acknowledgement.
+Deletion never refunds reservations. This is a duration quota, not a dollar cap.
+The original-language model and tariff contract were checked against the
+[official speech-to-text documentation](https://developers.openai.com/api/docs/guides/speech-to-text)
+and [pricing](https://developers.openai.com/api/docs/pricing) on 2026-10-15; operators
+should check the current tariff when enabling it.
+
+Private recordings live in `/data/answer-audio` (directory 0700, files 0600), outside
+static hosting. Authentication and ownership checks protect recording and transcript
+access. A transcript is committed before its recording is removed. Failed unlink
+is retried locally without another paid request. Failed/unknown recordings expire
+after 24 hours; active workers are protected until completion or explicit startup
+recovery. Hourly maintenance cleans terminal recordings, orphan temporary files and
+text-free transcription request metadata older than 30 days. History deletion scrubs
+transcripts and cancels late workers; discard permits a new recording before grading.
+
+Migration `0011` adds private audio rows and the duration ledger without rewriting
+older history. The existing cold-backup script copies the entire data volume,
+including `answer-audio`; protect backup archives because they can contain temporary
+recordings. Active-file retention does not erase older backups. Restore the complete
+protected volume and its matching application image for rollback.

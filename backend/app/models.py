@@ -302,3 +302,44 @@ class PictureDraftRequest(Base):
     key: Mapped[str] = mapped_column(String(80))
     fingerprint: Mapped[str] = mapped_column(String(64))
     card_id: Mapped[int] = mapped_column(Integer)
+
+
+class AudioAnswer(Base):
+    __tablename__ = "audio_answers"
+    __table_args__ = (UniqueConstraint("user_id", "request_key"),)
+    # Random immutable IDs also survive history deletion without late-worker aliasing.
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    session_card_id: Mapped[int | None] = mapped_column(
+        ForeignKey("session_cards.id"), nullable=True, index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    request_key: Mapped[str] = mapped_column(String(80))
+    request_keys: Mapped[list] = mapped_column(JSON, default=list)
+    sha256: Mapped[str] = mapped_column(String(64))
+    duration: Mapped[float] = mapped_column(Float)
+    raw_path: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    expected_language: Mapped[str] = mapped_column(String(35))
+    detected_languages: Mapped[list] = mapped_column(JSON, default=list)
+    original_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    was_edited: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created: Mapped[datetime] = mapped_column(default=now)
+
+
+class TranscriptionRequest(Base):
+    __tablename__ = "transcription_requests"
+    __table_args__ = (UniqueConstraint("user_id", "request_key"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    request_key: Mapped[str] = mapped_column(String(80))
+    seconds: Mapped[int] = mapped_column(Integer)
+    reserved_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="reserved")
+    model: Mapped[str] = mapped_column(String(200))
+    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)

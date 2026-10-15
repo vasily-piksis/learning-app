@@ -131,6 +131,9 @@ def recover_jobs(database):
     from .evaluations import recover_evaluations
 
     recover_evaluations(database)
+    from .answer_audio import recover_answer_audio
+
+    recover_answer_audio(database)
     with database.session() as db:
         for job in db.scalars(
             select(Job).where(Job.status == "running", Job.kind != "evaluate_response")
@@ -288,6 +291,11 @@ def run_job(database, ai, identifier):
             return
         job = db.get(Job, identifier)
         kind, payload, user_id = job.kind, job.payload, job.user_id
+    if kind == "transcribe_answer":
+        from .answer_audio import run_transcription_job
+
+        run_transcription_job(database, identifier, payload["revision"])
+        return
     if kind == "evaluate_response":
         from .evaluations import run_evaluation_job
 
@@ -476,6 +484,9 @@ def worker_loop(database, ai, stop: threading.Event):
         current = maintenance_clock()
         if current >= next_cleanup:
             cleanup_evaluation_requests(database)
+            from .answer_audio import cleanup_answer_audio
+
+            cleanup_answer_audio(database)
             next_cleanup = current + 3600
         with database.session() as db:
             identifier = db.scalar(
